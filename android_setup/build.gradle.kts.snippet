@@ -1,0 +1,18 @@
+// android/app/build.gradle.kts — নিচের অংশগুলো যোগ/মিলিয়ে নিন
+// (নোটিফিকেশন প্লাগিনের জন্য core library desugaring লাগে)
+
+android {
+    compileOptions {
+        isCoreLibraryDesugaringEnabled = true
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+    }
+}
+
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+}
+
+// পুরোনো Groovy build.gradle হলে:
+//   compileOptions { coreLibraryDesugaringEnabled true }
+//   dependencies { coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4' }

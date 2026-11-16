@@ -1,0 +1,54 @@
+name: smart_daily_need
+description: "Smart Daily Need - প্রতিদিনের তারিখ, আবহাওয়া, নামাজের সময়, খবর, নীতিবাক্য, কুরআনের বাণী ও ছোট গল্প।"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.2
+  geolocator: ^13.0.1
+  geocoding: ^3.0.0
+  intl: ^0.19.0
+  hijri: ^3.0.0
+  xml: ^6.5.0
+  url_launcher: ^6.3.0
+  shared_preferences: ^2.3.2
+  google_fonts: ^6.2.1
+  flutter_local_notifications: ^18.0.1
+  timezone: '>=0.9.4 <0.11.0'
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.1
+  flutter_native_splash: ^2.4.1
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/data/
+
+# অ্যাপ আইকন:  dart run flutter_launcher_icons
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/icon.png"
+  image_path_ios: "assets/icon/icon_ios.png"
+  remove_alpha_ios: true
+  adaptive_icon_background: "#0F7B5F"
+  adaptive_icon_foreground: "assets/icon/icon_foreground.png"
+  min_sdk_android: 21
+
+# স্প্ল্যাশ স্ক্রিন:  dart run flutter_native_splash:create
+flutter_native_splash:
+  color: "#0F7B5F"
+  image: assets/icon/splash.png
+  android_12:
+    color: "#0F7B5F"
+    image: assets/icon/splash_android12.png
+  fullscreen: false
