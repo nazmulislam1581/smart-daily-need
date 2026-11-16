@@ -1,5 +1,6 @@
-import 'package:geocoding/geocoding.dart';
+import 'dart:convert';
 import 'package:geolocator/geolocator.dart';
+import 'package:http/http.dart' as http;
 import '../config.dart';
 
 class UserLocation {
@@ -26,19 +27,29 @@ class LocationService {
           timeLimit: Duration(seconds: 10),
         ),
       );
-      var city = 'আপনার এলাকা';
-      try {
-        final marks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
-        if (marks.isNotEmpty) {
-          final p = marks.first;
-          city = [p.locality, p.subAdministrativeArea, p.administrativeArea]
-              .firstWhere((s) => s != null && s.isNotEmpty, orElse: () => city)!;
-        }
-      } catch (_) {}
-      return UserLocation(pos.latitude, pos.longitude, city);
+      return UserLocation(pos.latitude, pos.longitude,
+          await _cityName(pos.latitude, pos.longitude));
     } catch (_) {
       return _fallback;
     }
+  }
+
+  /// শহরের নাম (BigDataCloud-এর ফ্রি রিভার্স জিওকোডিং, কোনো API key লাগে না)
+  static Future<String> _cityName(double lat, double lng) async {
+    try {
+      final r = await http
+          .get(Uri.parse('https://api.bigdatacloud.net/data/reverse-geocode-client'
+              '?latitude=$lat&longitude=$lng&localityLanguage=bn'))
+          .timeout(const Duration(seconds: 8));
+      if (r.statusCode == 200) {
+        final j = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+        for (final k in ['city', 'locality', 'principalSubdivision']) {
+          final v = j[k];
+          if (v is String && v.isNotEmpty) return v;
+        }
+      }
+    } catch (_) {}
+    return 'আপনার এলাকা';
   }
 
   static const _fallback =
