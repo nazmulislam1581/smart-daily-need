@@ -66,6 +66,11 @@ class Bangla {
     'জমাদিউস সানি', 'রজব', 'শাবান', 'রমজান', 'শাওয়াল', 'জিলকদ', 'জিলহজ'
   ];
 
+  static ({int day, int month, int year}) hijri(DateTime d, int offsetDays) {
+    final h = HijriCalendar.fromDate(d.add(Duration(days: offsetDays)));
+    return (day: h.hDay, month: h.hMonth, year: h.hYear);
+  }
+
   static String hijriDate(DateTime d, int offsetDays) {
     final h = HijriCalendar.fromDate(d.add(Duration(days: offsetDays)));
     return '${digits(h.hDay)} ${_hijriMonths[h.hMonth - 1]}, ${digits(h.hYear)} হিজরি';

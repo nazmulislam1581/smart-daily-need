@@ -64,18 +64,27 @@ class WeatherService {
 }
 
 // ───────────────────────── নামাজের সময় (Aladhan API)
+/// একটি ওয়াক্ত বা সময়সীমা: শুরু ও শেষ
+class PrayerSlot {
+  final String key, name;
+  final DateTime start, end;
+  final String? note;
+  final bool fard;
+  const PrayerSlot(this.key, this.name, this.start, this.end, {this.note, this.fard = false});
+  bool get isNow {
+    final n = DateTime.now();
+    return !n.isBefore(start) && n.isBefore(end);
+  }
+}
+
 class PrayerService {
-  static const names = {
-    'Fajr': 'ফজর',
-    'Sunrise': 'সূর্যোদয়',
-    'Dhuhr': 'যোহর',
-    'Asr': 'আসর',
-    'Maghrib': 'মাগরিব',
-    'Isha': 'এশা',
-  };
+  static const _keys = [
+    'Imsak', 'Fajr', 'Sunrise', 'Dhuhr', 'Asr', 'Sunset', 'Maghrib', 'Isha',
+    'Midnight', 'Lastthird'
+  ];
 
   static Future<Map<String, dynamic>> fetch(UserLocation loc, {bool force = false}) =>
-      cached('prayer', force: force, () async {
+      cached('prayer_v2', force: force, () async {
         final n = DateTime.now();
         final date = '${n.day.toString().padLeft(2, '0')}-${n.month.toString().padLeft(2, '0')}-${n.year}';
         final j = await _getJson(
@@ -83,18 +92,98 @@ class PrayerService {
           '&method=${AppConfig.prayerMethod}&school=${AppConfig.asrSchool}',
         );
         final t = j['data']['timings'] as Map<String, dynamic>;
-        return {for (final k in names.keys) k: (t[k] as String).split(' ').first};
+        return {
+          for (final k in _keys)
+            if (t[k] != null) k: (t[k] as String).split(' ').first,
+        };
       });
 
-  /// পরের ওয়াক্তের key (সূর্যোদয় বাদে)
-  static String? next(Map<String, dynamic> times) {
+  static DateTime _at(Map<String, dynamic> t, String key, {int addDays = 0}) {
+    final p = (t[key] as String).split(':');
+    final n = DateTime.now();
+    return DateTime(n.year, n.month, n.day + addDays, int.parse(p[0]), int.parse(p[1]));
+  }
+
+  /// আজকের সব ওয়াক্তের শুরু ও শেষ সময়
+  static List<PrayerSlot> slots(Map<String, dynamic> t) {
+    final friday = DateTime.now().weekday == DateTime.friday;
+    final fajr = _at(t, 'Fajr'), sunrise = _at(t, 'Sunrise'), dhuhr = _at(t, 'Dhuhr');
+    final asr = _at(t, 'Asr'), maghrib = _at(t, 'Maghrib'), isha = _at(t, 'Isha');
+    final sunset = t['Sunset'] != null ? _at(t, 'Sunset') : maghrib;
+    final nextFajr = _at(t, 'Fajr', addDays: 1);
+    var midnight = t['Midnight'] != null ? _at(t, 'Midnight') : nextFajr;
+    if (midnight.isBefore(isha)) midnight = midnight.add(const Duration(days: 1));
+    var lastThird = t['Lastthird'] != null ? _at(t, 'Lastthird') : midnight;
+    if (lastThird.isBefore(isha)) lastThird = lastThird.add(const Duration(days: 1));
+
+    return [
+      PrayerSlot('Fajr', 'ফজর', fajr, sunrise, fard: true),
+      PrayerSlot('Ishraq', 'ইশরাক / চাশত', sunrise.add(const Duration(minutes: 20)),
+          dhuhr.subtract(const Duration(minutes: 10)),
+          note: 'নফল নামাজ'),
+      PrayerSlot('Dhuhr', friday ? 'জুমা' : 'যোহর', dhuhr, asr,
+          fard: true,
+          note: friday ? 'জুমার খুতবার সময় স্থানীয় মসজিদে জেনে নিন' : null),
+      PrayerSlot('Asr', 'আসর', asr, sunset,
+          fard: true, note: 'সূর্যাস্তের আগের ১৫ মিনিট মাকরুহ'),
+      PrayerSlot('Maghrib', 'মাগরিব', maghrib, isha, fard: true),
+      PrayerSlot('Isha', 'এশা', isha, nextFajr,
+          fard: true, note: 'মধ্যরাত (${Bangla.time12(_hm(midnight))}) এর আগে পড়া উত্তম'),
+      PrayerSlot('Tahajjud', 'তাহাজ্জুদ', lastThird, nextFajr,
+          note: 'রাতের শেষ তৃতীয়াংশ, সবচেয়ে উত্তম সময়'),
+    ];
+  }
+
+  /// নামাজ পড়া নিষিদ্ধ সময় (আনুমানিক)
+  static List<PrayerSlot> forbidden(Map<String, dynamic> t) {
+    final sunrise = _at(t, 'Sunrise'), dhuhr = _at(t, 'Dhuhr');
+    final sunset = t['Sunset'] != null ? _at(t, 'Sunset') : _at(t, 'Maghrib');
+    return [
+      PrayerSlot('f1', 'সূর্যোদয়', sunrise, sunrise.add(const Duration(minutes: 15))),
+      PrayerSlot('f2', 'দ্বিপ্রহর', dhuhr.subtract(const Duration(minutes: 8)), dhuhr),
+      PrayerSlot('f3', 'সূর্যাস্ত', sunset.subtract(const Duration(minutes: 15)), sunset),
+    ];
+  }
+
+  /// রমজানে সেহরি ও ইফতার
+  static ({DateTime sehri, DateTime iftar}) sehriIftar(Map<String, dynamic> t) =>
+      (sehri: _at(t, 'Fajr'), iftar: _at(t, 'Maghrib'));
+
+  static String _hm(DateTime d) => '${d.hour}:${d.minute.toString().padLeft(2, '0')}';
+  static String fmt(DateTime d) => Bangla.time12(_hm(d));
+
+  /// এখনকার ফরজ ওয়াক্ত (না থাকলে null) ও পরের ফরজ ওয়াক্ত
+  static ({PrayerSlot? current, PrayerSlot next, Duration until}) status(Map<String, dynamic> t) {
+    final all = slots(t).where((s) => s.fard).toList();
     final now = DateTime.now();
-    for (final k in ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha']) {
-      final p = (times[k] as String).split(':');
-      final t = DateTime(now.year, now.month, now.day, int.parse(p[0]), int.parse(p[1]));
-      if (t.isAfter(now)) return k;
+    PrayerSlot? current;
+    for (final s in all) {
+      if (s.isNow) current = s;
     }
-    return 'Fajr'; // এশার পরে → পরের দিনের ফজর
+    PrayerSlot? next;
+    for (final s in all) {
+      if (s.start.isAfter(now)) {
+        next = s;
+        break;
+      }
+    }
+    if (next == null) {
+      // এশার পরে → আগামীকালের ফজর
+      final f = all.first;
+      next = PrayerSlot(f.key, f.name, f.start.add(const Duration(days: 1)),
+          f.end.add(const Duration(days: 1)), fard: true);
+    }
+    // ফজরের আগে গতকালের এশা চলছে
+    if (current == null && now.isBefore(all.first.start)) {
+      current = PrayerSlot('Isha', 'এশা', now, all.first.start, fard: true);
+    }
+    return (current: current, next: next, until: next.start.difference(now));
+  }
+
+  static String duration(Duration d) {
+    final h = d.inHours, m = d.inMinutes % 60;
+    if (h > 0) return '${Bangla.digits(h)} ঘণ্টা ${Bangla.digits(m)} মিনিট';
+    return '${Bangla.digits(d.inMinutes)} মিনিট';
   }
 }
 
@@ -125,40 +214,97 @@ class NewsService {
   }
 }
 
-// ───────────────────────── কুরআনের বাণী (alquran.cloud, আরবি + বাংলা অনুবাদ)
+// ───────────────────────── কুরআনের বাণী: বাছাই করা উপদেশমূলক পূর্ণাঙ্গ আয়াত
 class QuranService {
   static Future<Map<String, dynamic>> fetch({bool force = false}) async {
+    final list = jsonDecode(await rootBundle.loadString('assets/data/quran_verses.json')) as List;
+    final v = list[Bangla.dayIndex(DateTime.now()) % list.length] as Map<String, dynamic>;
+    final refs = (v['refs'] as List).cast<String>();
     try {
-      return await cached('quran', force: force, () async {
-        // প্রতিদিন আলাদা আয়াত (মোট ৬২৩৬ আয়াত)
-        final n = (Bangla.dayIndex(DateTime.now()) * 97) % 6236 + 1;
-        final j = await _getJson(
-            'https://api.alquran.cloud/v1/ayah/$n/editions/quran-uthmani,bn.bengali');
-        final list = j['data'] as List;
-        final ar = list[0], bn = list[1];
-        return {
-          'arabic': ar['text'],
-          'bangla': bn['text'],
-          'ref': 'সূরা ${ar['surah']['englishName']} (${Bangla.digits(ar['surah']['number'])}:${Bangla.digits(ar['numberInSurah'])})',
-        };
-      });
+      return await cached('quran_v2', force: force, () async {
+        final ar = <String>[], bn = <String>[];
+        for (final r in refs) {
+          final j = await _getJson(
+              'https://api.alquran.cloud/v1/ayah/$r/editions/quran-uthmani,bn.bengali');
+          final d = j['data'] as List;
+          ar.add(d[0]['text'] as String);
+          bn.add(d[1]['text'] as String);
+        }
+        return {'arabic': ar.join(' ۝ '), 'bangla': bn.join(' '), 'ref': v['label']};
+      }).then((m) => m['ref'] == v['label'] ? m : throw Exception('stale'));
     } catch (_) {
-      final list = jsonDecode(await rootBundle.loadString('assets/data/quran_fallback.json')) as List;
-      final v = list[Bangla.dayIndex(DateTime.now()) % list.length];
-      return {'arabic': '', 'bangla': v['bangla'], 'ref': v['ref']};
+      return {'arabic': '', 'bangla': v['bangla'], 'ref': v['label']};
     }
   }
 }
 
-// ───────────────────────── নীতিবাক্য ও ছোট গল্প (অ্যাপের ভেতরেই রাখা, প্রতিদিন বদলায়)
+// ───────────────────────── অ্যাপের ভেতরের কনটেন্ট (প্রতিদিন নিজে থেকে বদলায়)
 class LocalContent {
-  static Future<String> quote() async {
-    final list = jsonDecode(await rootBundle.loadString('assets/data/quotes.json')) as List;
-    return list[Bangla.dayIndex(DateTime.now()) % list.length];
+  static Future<dynamic> _load(String name) async =>
+      jsonDecode(await rootBundle.loadString('assets/data/$name.json'));
+
+  static Future<T> _pick<T>(String name, {int salt = 0}) async {
+    final list = await _load(name) as List;
+    return list[(Bangla.dayIndex(DateTime.now()) + salt) % list.length] as T;
   }
 
-  static Future<Map<String, dynamic>> story() async {
-    final list = jsonDecode(await rootBundle.loadString('assets/data/stories.json')) as List;
-    return list[Bangla.dayIndex(DateTime.now()) % list.length];
+  static Future<String> quote() => _pick<String>('quotes');
+  static Future<Map<String, dynamic>> story() => _pick<Map<String, dynamic>>('stories');
+  static Future<Map<String, dynamic>> hadith() => _pick<Map<String, dynamic>>('hadith', salt: 7);
+  static Future<String> joke() => _pick<String>('jokes', salt: 3);
+
+  /// আজকের দিবস। না থাকলে সামনের দিবসটি দেখায়।
+  static Future<({List<String> today, String? nextName, DateTime? nextDate})> days(
+      int hijriOffset) async {
+    final m = await _load('days') as Map<String, dynamic>;
+    final greg = (m['gregorian'] as Map<String, dynamic>);
+    final hij = (m['hijri'] as Map<String, dynamic>);
+    String gk(DateTime d) =>
+        '${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    List<String> on(DateTime d) {
+      final r = <String>[...((greg[gk(d)] as List?) ?? const []).cast<String>()];
+      final h = Bangla.hijri(d, hijriOffset);
+      final hd = hij['${h.month}-${h.day}'] as List?;
+      if (hd != null) r.addAll(hd.cast<String>().map((e) => '$e (চাঁদ দেখা সাপেক্ষে)'));
+      return r;
+    }
+
+    final now = DateTime.now();
+    final today = on(now);
+    for (var i = 1; i <= 60; i++) {
+      final d = DateTime(now.year, now.month, now.day + i);
+      final l = on(d);
+      if (l.isNotEmpty) return (today: today, nextName: l.first, nextDate: d);
+    }
+    return (today: today, nextName: null, nextDate: null);
+  }
+
+  /// সময় অনুযায়ী আমল: সকাল / দিন / সন্ধ্যা / রাত
+  static Future<Map<String, dynamic>> amol(Map<String, dynamic>? prayer) async {
+    final m = await _load('amol') as Map<String, dynamic>;
+    final now = DateTime.now();
+    String period;
+    if (prayer != null && prayer['Fajr'] != null) {
+      DateTime at(String k) {
+        final p = (prayer[k] as String).split(':');
+        return DateTime(now.year, now.month, now.day, int.parse(p[0]), int.parse(p[1]));
+      }
+
+      if (now.isBefore(at('Fajr'))) {
+        period = 'night';
+      } else if (now.isBefore(at('Dhuhr'))) {
+        period = 'morning';
+      } else if (now.isBefore(at('Asr'))) {
+        period = 'day';
+      } else if (now.isBefore(at('Isha'))) {
+        period = 'evening';
+      } else {
+        period = 'night';
+      }
+    } else {
+      final h = now.hour;
+      period = h < 5 ? 'night' : h < 12 ? 'morning' : h < 16 ? 'day' : h < 20 ? 'evening' : 'night';
+    }
+    return m[period] as Map<String, dynamic>;
   }
 }
