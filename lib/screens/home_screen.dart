@@ -292,6 +292,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   List<Widget> _actions() => [
         IconButton(
+          tooltip: 'অ্যাপ সম্পর্কে',
+          icon: const Icon(Icons.info_outline, color: Colors.white),
+          onPressed: _showAbout,
+        ),
+        IconButton(
           tooltip: 'নোটিফিকেশন',
           icon: const Icon(Icons.notifications_outlined, color: Colors.white),
           onPressed: _openNotificationSettings,
@@ -496,6 +501,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           builder: (j) => Text(j, style: const TextStyle(fontSize: 16, height: 1.6)),
         ),
       ),
+      _developerCard(),
     ]);
   }
 
@@ -766,6 +772,62 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ]),
         ),
       ),
+      _developerCard(),
     ]);
+  }
+
+  // ─────────────────────────────── ডেভেলপার তথ্য
+  static const _devName = 'Md. Nazmul Islam';
+  static const _devEmail = 'mail@nislam.info.bd';
+  static const _devWeb = 'nislam.info.bd';
+
+  void _open(Uri u) => launchUrl(u, mode: LaunchMode.externalApplication);
+
+  Widget _developerCard() {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(children: [
+        Text('ডেভেলপ করেছেন', style: TextStyle(fontSize: 12.5, color: cs.onSurfaceVariant)),
+        const SizedBox(height: 4),
+        const Text(_devName, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 8),
+        Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 6, children: [
+          ActionChip(
+            avatar: const Icon(Icons.email_outlined, size: 18),
+            label: const Text(_devEmail),
+            onPressed: () => _open(Uri(scheme: 'mailto', path: _devEmail)),
+          ),
+          ActionChip(
+            avatar: const Icon(Icons.language, size: 18),
+            label: const Text(_devWeb),
+            onPressed: () => _open(Uri.parse('https://$_devWeb')),
+          ),
+        ]),
+      ]),
+    );
+  }
+
+  void _showAbout() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (c) => Padding(
+        padding: const EdgeInsets.fromLTRB(8, 0, 8, 24),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text(AppConfig.appName,
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 4),
+          const Text('প্রতিদিনের দরকারি সব তথ্য এক অ্যাপে', textAlign: TextAlign.center),
+          const SizedBox(height: 12),
+          _developerCard(),
+        ]),
+      ),
+    );
   }
 }

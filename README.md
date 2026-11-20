@@ -76,3 +76,8 @@ lib/
   widgets/section_card.dart
 assets/data/                 quotes, stories, quran_fallback
 ```
+
+## ডেভেলপার
+**Md. Nazmul Islam**  
+ইমেইল: mail@nislam.info.bd  
+ওয়েবসাইট: [nislam.info.bd](https://nislam.info.bd)
