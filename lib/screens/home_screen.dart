@@ -7,6 +7,7 @@ import '../services/data_services.dart';
 import '../services/location_service.dart';
 import '../services/notification_service.dart';
 import '../utils/bangla.dart';
+import '../widgets/quiz_card.dart';
 import '../widgets/section_card.dart';
 
 // কার্ডের রং
@@ -21,6 +22,7 @@ const _cHadith = Color(0xFF2B8A3E);
 const _cStory = Color(0xFFC2255C);
 const _cJoke = Color(0xFFF08C00);
 const _cHealth = Color(0xFFE03131);
+const _cQuiz = Color(0xFF1864AB);
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -38,6 +40,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<List<NewsItem>>? _news;
   Future<String>? _quote, _joke;
   Future<({List<String> today, String? nextName, DateTime? nextDate})>? _days;
+  Future<({String label, List<Map<String, dynamic>> bd, List<Map<String, dynamic>> world})>? _quiz;
   Future<UserLocation>? _loc;
   Timer? _ticker;
 
@@ -181,6 +184,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _hadith = LocalContent.hadith();
       _joke = LocalContent.joke();
       _health = LocalContent.healthTip();
+      _quiz = LocalContent.quiz();
       _days = LocalContent.days(_hijriOffset);
       _news = NewsService.fetch(force: force);
       _quran = QuranService.fetch(force: force);
@@ -821,10 +825,29 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     ]);
   }
 
+  Widget _quizCard() => SectionCard(
+        icon: '🧠',
+        title: 'আজকের কুইজ',
+        subtitle: 'বাংলাদেশ ২টি + বিশ্ব ৩টি • উত্তর দিয়ে নিজেকে যাচাই করুন',
+        accent: _cQuiz,
+        child: AsyncSection<({String label, List<Map<String, dynamic>> bd, List<Map<String, dynamic>> world})>(
+          future: _quiz,
+          builder: (z) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Align(alignment: Alignment.centerLeft, child: Pill(z.label, color: _cQuiz)),
+            const SizedBox(height: 10),
+            QuizList(accent: _cQuiz, questions: [
+              ...z.bd.map((q) => (tag: 'বাংলাদেশ', q: q)),
+              ...z.world.map((q) => (tag: 'বিশ্ব', q: q)),
+            ]),
+          ]),
+        ),
+      );
+
   // ─────────────────────────────── ট্যাব ৪: পাঠ
   Widget _readPage() {
     final cs = Theme.of(context).colorScheme;
     return _page(title: 'আজকের পাঠ', [
+      _quizCard(),
       SectionCard(
         icon: '💡',
         title: 'আজকের নীতিবাক্য',
@@ -868,8 +891,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         child: AsyncSection<Map<String, dynamic>>(
           future: _hadith,
           builder: (h) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Text('রাসুলুল্লাহ (সা.) বলেছেন:', style: TextStyle(color: cs.onSurfaceVariant)),
-            const SizedBox(height: 6),
             Text(h['text'], style: const TextStyle(fontSize: 16.5, height: 1.65)),
             const SizedBox(height: 8),
             Align(alignment: Alignment.centerRight, child: Pill(h['ref'], color: _cHadith)),

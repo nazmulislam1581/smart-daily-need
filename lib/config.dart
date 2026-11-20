@@ -28,4 +28,8 @@ class AppConfig {
   static const notifHour = 6;
   static const notifMinute = 0;
   static const timeZone = 'Asia/Dhaka';
+
+  /// প্রতিদিনের কনটেন্ট (কুইজ, নীতিবাক্য, গল্প, কৌতুক, টিপস) এখান থেকে আসে
+  static const contentBaseUrl =
+      'https://raw.githubusercontent.com/nazmulislam1581/smart-daily-need/main/content/';
 }

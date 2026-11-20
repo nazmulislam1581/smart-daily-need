@@ -294,34 +294,86 @@ class NewsService {
   }
 }
 
-// ───────────────────────── কুরআনের বাণী: বাছাই করা উপদেশমূলক পূর্ণাঙ্গ আয়াত
+// ───────────────────────── কুরআনের বাণী: ৪৫০টি বাছাই করা উপদেশমূলক আয়াত (আরবি + বাংলা, অফলাইন)
 class QuranService {
   static Future<Map<String, dynamic>> fetch({bool force = false}) async {
     final list = jsonDecode(await rootBundle.loadString('assets/data/quran_verses.json')) as List;
-    final v = list[Bangla.dayIndex(DateTime.now()) % list.length] as Map<String, dynamic>;
-    final refs = (v['refs'] as List).cast<String>();
-    try {
-      return await cached('quran_v2', force: force, () async {
-        final ar = <String>[], bn = <String>[];
-        for (final r in refs) {
-          final j = await _getJson(
-              'https://api.alquran.cloud/v1/ayah/$r/editions/quran-uthmani,bn.bengali');
-          final d = j['data'] as List;
-          ar.add(d[0]['text'] as String);
-          bn.add(d[1]['text'] as String);
-        }
-        return {'arabic': ar.join(' ۝ '), 'bangla': bn.join(' '), 'ref': v['label']};
-      }).then((m) => m['ref'] == v['label'] ? m : throw Exception('stale'));
-    } catch (_) {
-      return {'arabic': '', 'bangla': v['bangla'], 'ref': v['label']};
-    }
+    final v = list[(Bangla.dayIndex(DateTime.now()) * 7) % list.length] as Map<String, dynamic>;
+    return {
+      'arabic': (v['arabic'] ?? '') as String,
+      'bangla': (v['bangla'] ?? '') as String,
+      'ref': v['label'] as String,
+    };
   }
 }
 
 // ───────────────────────── অ্যাপের ভেতরের কনটেন্ট (প্রতিদিন নিজে থেকে বদলায়)
 class LocalContent {
-  static Future<dynamic> _load(String name) async =>
+  static Future<dynamic> _asset(String name) async =>
       jsonDecode(await rootBundle.loadString('assets/data/$name.json'));
+
+  /// এই কনটেন্টগুলো GitHub থেকে প্রতিদিন হালনাগাদ হয় (নতুন আইটেম যোগ হতে থাকে)।
+  /// ইন্টারনেট না থাকলে শেষ ডাউনলোড বা অ্যাপের ভেতরের কপি ব্যবহার হয়।
+  static const _remoteBanks = {'quotes', 'stories', 'jokes', 'health_tips', 'gk_quiz'};
+
+  static Future<dynamic> _load(String name) async {
+    if (_remoteBanks.contains(name)) {
+      try {
+        final m = await cached('bank_$name', () async {
+          final r = await http
+              .get(Uri.parse('${AppConfig.contentBaseUrl}banks/$name.json'))
+              .timeout(_timeout);
+          if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
+          return {'v': jsonDecode(utf8.decode(r.bodyBytes))};
+        });
+        final local = await _asset(name);
+        final remote = m['v'];
+        // যেটায় বেশি আইটেম, সেটাই ব্যবহার
+        if (remote is List && local is List) return remote.length >= local.length ? remote : local;
+        if (remote is Map && local is Map) {
+          final rl = ((remote['bd'] as List?)?.length ?? 0) + ((remote['world'] as List?)?.length ?? 0);
+          final ll = ((local['bd'] as List?)?.length ?? 0) + ((local['world'] as List?)?.length ?? 0);
+          return rl >= ll ? remote : local;
+        }
+      } catch (_) {}
+    }
+    return _asset(name);
+  }
+
+  /// আজকের কুইজ: সাম্প্রতিক বাংলাদেশ (২টি) + বিশ্ব (৩টি)।
+  /// GitHub-এ প্রতিদিন নতুন প্রশ্ন আসে; না পেলে সাধারণ জ্ঞানের প্রশ্ন।
+  static Future<({String label, List<Map<String, dynamic>> bd, List<Map<String, dynamic>> world})>
+      quiz() async {
+    List<Map<String, dynamic>> cast(dynamic l) =>
+        ((l as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    try {
+      final m = await cached('quiz_today', () async {
+        final r = await http
+            .get(Uri.parse('${AppConfig.contentBaseUrl}quiz.json'))
+            .timeout(_timeout);
+        if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
+        return jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+      });
+      final d = DateTime.tryParse('${m['date']}');
+      final age = d == null ? 99 : DateTime.now().difference(d).inDays;
+      final bd = cast(m['bd']), world = cast(m['world']);
+      if (age <= 3 && bd.isNotEmpty && world.isNotEmpty) {
+        return (
+          label: 'সাম্প্রতিক • ${Bangla.digits(d!.day)} ${Bangla.englishMonths[d.month - 1]}',
+          bd: bd,
+          world: world,
+        );
+      }
+    } catch (_) {}
+    final g = await _load('gk_quiz') as Map;
+    final bdAll = cast(g['bd']), wAll = cast(g['world']);
+    final i = Bangla.dayIndex(DateTime.now());
+    return (
+      label: 'সাধারণ জ্ঞান',
+      bd: [for (var k = 0; k < 2; k++) bdAll[(i * 2 + k) % bdAll.length]],
+      world: [for (var k = 0; k < 3; k++) wAll[(i * 3 + k) % wAll.length]],
+    );
+  }
 
   static Future<T> _pick<T>(String name, {int salt = 0}) async {
     final list = await _load(name) as List;

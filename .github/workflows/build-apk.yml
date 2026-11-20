@@ -3,7 +3,12 @@ name: Build APK
 on:
   push:
     branches: [main, master]
+    paths-ignore:
+      - 'content/**'
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Build Hadith & Quran content"]
+    types: [completed]
 
 permissions:
   contents: write
