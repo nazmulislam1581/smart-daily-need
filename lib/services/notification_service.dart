@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'dart:convert';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -21,8 +22,11 @@ class NotificationService {
   static const _kHour = 'notif_hour';
   static const _kMinute = 'notif_minute';
 
+  /// Windows/ডেস্কটপে প্রতিদিনের নোটিফিকেশন সাজানো সমর্থিত নয়
+  static bool get supported => Platform.isAndroid || Platform.isIOS;
+
   static Future<void> init() async {
-    if (_ready) return;
+    if (_ready || !supported) return;
     tzdata.initializeTimeZones();
     tz.setLocalLocation(tz.getLocation(AppConfig.timeZone));
     await _plugin.initialize(const InitializationSettings(
@@ -37,6 +41,7 @@ class NotificationService {
   }
 
   static Future<bool> requestPermission() async {
+    if (!supported) return false;
     final android = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
     final ios = _plugin.resolvePlatformSpecificImplementation<
@@ -65,6 +70,7 @@ class NotificationService {
 
   /// সামনের ৭ দিনের নোটিফিকেশন নতুন করে সাজায়। অ্যাপ খোলার সময় ডাকা হয়।
   static Future<void> reschedule(UserLocation loc, {int hijriOffset = 0}) async {
+    if (!supported) return;
     await init();
     await _plugin.cancelAll();
     final s = await settings();
@@ -119,6 +125,7 @@ class NotificationService {
 
   /// এখনই একটি নমুনা নোটিফিকেশন (সেটিংস থেকে পরীক্ষার জন্য)
   static Future<void> showTest() async {
+    if (!supported) return;
     await init();
     await _plugin.show(
       99,

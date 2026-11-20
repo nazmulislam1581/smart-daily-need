@@ -60,3 +60,49 @@ jobs:
           tag_name: build-${{ github.run_number }}
           name: Smart Daily Need build ${{ github.run_number }}
           files: SmartDailyNeed.apk
+
+  windows:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Create Windows project files
+        shell: bash
+        run: |
+          flutter create --org bd.bats --project-name smart_daily_need --platforms windows .
+          rm -rf test
+
+      - name: Get packages and icon
+        shell: bash
+        run: |
+          flutter pub get
+          dart run flutter_launcher_icons
+
+      - name: Build Windows app
+        run: flutter build windows --release
+
+      - name: Package (zip with exe + required files)
+        shell: pwsh
+        run: |
+          $rel = "build/windows/x64/runner/Release"
+          Rename-Item "$rel/smart_daily_need.exe" "SmartDailyNeed.exe"
+          Compress-Archive -Path "$rel/*" -DestinationPath "SmartDailyNeed-Windows.zip"
+
+      - name: Upload (Actions artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: SmartDailyNeed-windows
+          path: SmartDailyNeed-Windows.zip
+
+      - name: Attach to the same GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Smart Daily Need build ${{ github.run_number }}
+          files: SmartDailyNeed-Windows.zip
