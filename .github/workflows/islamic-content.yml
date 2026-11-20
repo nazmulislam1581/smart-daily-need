@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'tools/**'
+      - '.github/workflows/islamic-content.yml'
   workflow_dispatch:
 
 permissions:
@@ -27,4 +28,4 @@ jobs:
           git add assets/data/hadith.json assets/data/quran_verses.json
           git diff --cached --quiet && echo "no changes" && exit 0
           git commit -m "Update hadith and Quran verse content"
-          git push
+          for i in 1 2 3; do git pull --rebase origin main && git push && break; sleep 5; done

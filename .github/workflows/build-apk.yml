@@ -5,6 +5,8 @@ on:
     branches: [main, master]
     paths-ignore:
       - 'content/**'
+      - 'tools/**'
+      - '.github/workflows/islamic-content.yml'
   workflow_dispatch:
   workflow_run:
     workflows: ["Build Hadith & Quran content"]
