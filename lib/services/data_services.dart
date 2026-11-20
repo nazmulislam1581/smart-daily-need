@@ -1,3 +1,4 @@
+import 'dart:io' show HttpDate;
 import 'dart:convert';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
@@ -187,30 +188,109 @@ class PrayerService {
   }
 }
 
-// ───────────────────────── খবর (Google News RSS)
+// ───────────────────────── খবর (প্রথম আলো RSS, ছবিসহ; ব্যর্থ হলে Google News)
 class NewsItem {
-  final String title, source, link;
-  NewsItem(this.title, this.source, this.link);
-  Map<String, dynamic> toJson() => {'t': title, 's': source, 'l': link};
-  factory NewsItem.fromJson(Map<String, dynamic> j) => NewsItem(j['t'], j['s'], j['l']);
+  final String title, source, link, image, summary;
+  final DateTime? time;
+  NewsItem(this.title, this.source, this.link,
+      {this.image = '', this.summary = '', this.time});
+  Map<String, dynamic> toJson() => {
+        't': title, 's': source, 'l': link, 'i': image, 'd': summary,
+        'p': time?.toIso8601String(),
+      };
+  factory NewsItem.fromJson(Map<String, dynamic> j) => NewsItem(
+        (j['t'] ?? '') as String,
+        (j['s'] ?? '') as String,
+        (j['l'] ?? '') as String,
+        image: (j['i'] ?? '') as String,
+        summary: (j['d'] ?? '') as String,
+        time: j['p'] == null ? null : DateTime.tryParse(j['p'] as String),
+      );
+
+  /// "৩ ঘণ্টা আগে"
+  String get ago {
+    if (time == null) return '';
+    final d = DateTime.now().difference(time!.toLocal());
+    if (d.inMinutes < 1) return 'এইমাত্র';
+    if (d.inMinutes < 60) return '${Bangla.digits(d.inMinutes)} মিনিট আগে';
+    if (d.inHours < 24) return '${Bangla.digits(d.inHours)} ঘণ্টা আগে';
+    return '${Bangla.digits(d.inDays)} দিন আগে';
+  }
 }
 
 class NewsService {
+  static const _media = 'http://search.yahoo.com/mrss/';
+  static final _imgRe = RegExp('<img[^>]+src="([^"]+)"');
+
+  static String _strip(String html) => html
+      .replaceAll(RegExp(r'<[^>]*>'), ' ')
+      .replaceAll(RegExp(r'&nbsp;|&#160;'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+
+  static DateTime? _date(String? s) {
+    if (s == null || s.isEmpty) return null;
+    try {
+      return HttpDate.parse(s.replaceAll('+0000', 'GMT'));
+    } catch (_) {
+      return DateTime.tryParse(s);
+    }
+  }
+
+  static String _image(XmlElement e) {
+    final content = e.findElements('content', namespace: _media);
+    if (content.isNotEmpty) {
+      final u = content.first.getAttribute('url');
+      if (u != null && u.isNotEmpty) return '${u.split('?').first}?w=720';
+    }
+    final thumb = e.findElements('thumbnail', namespace: _media);
+    if (thumb.isNotEmpty) {
+      final u = thumb.first.getAttribute('url');
+      if (u != null && u.isNotEmpty) return u;
+    }
+    final enc = e.getElement('enclosure')?.getAttribute('url');
+    if (enc != null && enc.isNotEmpty) return enc;
+    final html = e.getElement('description')?.innerText ?? '';
+    return _imgRe.firstMatch(html)?.group(1) ?? '';
+  }
+
+  static Future<List<Map<String, dynamic>>> _parse(String url, String defaultSource) async {
+    final r = await http.get(Uri.parse(url)).timeout(_timeout);
+    if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
+    final doc = XmlDocument.parse(utf8.decode(r.bodyBytes));
+    final google = defaultSource.isEmpty;
+    return doc.findAllElements('item').take(10).map((e) {
+      var title = e.getElement('title')?.innerText.trim() ?? '';
+      final source = e.getElement('source')?.innerText ?? defaultSource;
+      final cut = title.lastIndexOf(' - ');
+      if (google && cut > 0) title = title.substring(0, cut);
+      var summary = google ? '' : _strip(e.getElement('description')?.innerText ?? '');
+      if (summary.length > 160) summary = '${summary.substring(0, 157)}...';
+      return NewsItem(
+        title,
+        source,
+        e.getElement('link')?.innerText.trim() ?? '',
+        image: _image(e),
+        summary: summary,
+        time: _date(e.getElement('pubDate')?.innerText),
+      ).toJson();
+    }).toList();
+  }
+
   static Future<List<NewsItem>> fetch({bool force = false}) async {
-    final data = await cached('news', force: force, () async {
-      final r = await http.get(Uri.parse(AppConfig.newsRssUrl)).timeout(_timeout);
-      if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
-      final doc = XmlDocument.parse(utf8.decode(r.bodyBytes));
-      final items = doc.findAllElements('item').take(10).map((e) {
-        var title = e.getElement('title')?.innerText ?? '';
-        final source = e.getElement('source')?.innerText ?? '';
-        final cut = title.lastIndexOf(' - ');
-        if (cut > 0) title = title.substring(0, cut);
-        return NewsItem(title.trim(), source, e.getElement('link')?.innerText ?? '').toJson();
-      }).toList();
+    final data = await cached('news_v2', force: force, () async {
+      List<Map<String, dynamic>> items;
+      try {
+        items = await _parse(AppConfig.newsRssUrl, AppConfig.newsSourceName);
+        if (items.isEmpty) throw Exception('empty');
+      } catch (_) {
+        items = await _parse(AppConfig.newsFallbackRssUrl, '');
+      }
       return {'items': items};
     });
-    return (data['items'] as List).map((e) => NewsItem.fromJson(e)).toList();
+    return (data['items'] as List)
+        .map((e) => NewsItem.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 }
 

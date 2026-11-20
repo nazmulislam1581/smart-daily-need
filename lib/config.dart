@@ -14,8 +14,10 @@ class AppConfig {
   /// 1 = হানাফি (আসরের সময়), 0 = শাফেয়ি
   static const asrSchool = 1;
 
-  /// বাংলা খবরের RSS (Google News বাংলাদেশ)। অন্য পত্রিকার RSS দিতে চাইলে বদলান।
-  static const newsRssUrl =
+  /// খবরের RSS: প্রথম আলো (ছবিসহ)। না পেলে Google News বাংলাদেশ।
+  static const newsRssUrl = 'https://www.prothomalo.com/stories.rss';
+  static const newsSourceName = 'প্রথম আলো';
+  static const newsFallbackRssUrl =
       'https://news.google.com/rss?hl=bn&gl=BD&ceid=BD:bn';
 
   /// বাংলাদেশে চাঁদ দেখা সাধারণত সৌদির চেয়ে এক দিন পরে হয়।

@@ -671,50 +671,152 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ]);
 
   // ─────────────────────────────── ট্যাব ৩: খবর
+  void _openNews(NewsItem n) {
+    if (n.link.isNotEmpty) launchUrl(Uri.parse(n.link), mode: LaunchMode.externalApplication);
+  }
+
+  Widget _newsImage(String url, {double? height, double? width, double radius = 14}) {
+    final ph = Container(
+      height: height,
+      width: width,
+      color: _cNews.withValues(alpha: .10),
+      alignment: Alignment.center,
+      child: const Text('📰', style: TextStyle(fontSize: 28)),
+    );
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: url.isEmpty
+          ? ph
+          : Image.network(
+              url,
+              height: height,
+              width: width,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => ph,
+              loadingBuilder: (c, child, p) => p == null ? child : ph,
+            ),
+    );
+  }
+
   Widget _newsPage() {
     final cs = Theme.of(context).colorScheme;
     return _page(title: 'আজকের শীর্ষ খবর', [
-      SectionCard(
-        icon: '📰',
-        title: 'শীর্ষ ১০ খবর',
-        subtitle: 'প্রতি ৩০ মিনিটে নিজে থেকে আপডেট হয়',
-        accent: _cNews,
-        child: AsyncSection<List<NewsItem>>(
-          future: _news,
-          builder: (items) => Column(children: [
-            for (var i = 0; i < items.length; i++)
-              InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () =>
-                    launchUrl(Uri.parse(items[i].link), mode: LaunchMode.externalApplication),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 9),
-                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Container(
-                      width: 30,
-                      height: 30,
-                      alignment: Alignment.center,
+      AsyncSection<List<NewsItem>>(
+        future: _news,
+        builder: (items) {
+          if (items.isEmpty) return const SizedBox.shrink();
+          final top = items.first;
+          return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            // প্রধান খবর: বড় ছবি
+            GestureDetector(
+              onTap: () => _openNews(top),
+              child: Container(
+                margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(22),
+                  boxShadow: [
+                    BoxShadow(
+                        color: Colors.black.withValues(alpha: .15),
+                        blurRadius: 16,
+                        offset: const Offset(0, 6)),
+                  ],
+                ),
+                child: Stack(children: [
+                  AspectRatio(
+                    aspectRatio: 16 / 10,
+                    child: _newsImage(top.image, radius: 22),
+                  ),
+                  Positioned.fill(
+                    child: DecoratedBox(
                       decoration: BoxDecoration(
-                        color: _cNews.withValues(alpha: .12),
-                        borderRadius: BorderRadius.circular(9),
+                        borderRadius: BorderRadius.circular(22),
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Colors.transparent, Colors.black.withValues(alpha: .80)],
+                          stops: const [.35, 1],
+                        ),
                       ),
-                      child: Text(Bangla.digits(i + 1),
-                          style: const TextStyle(color: _cNews, fontWeight: FontWeight.w800)),
                     ),
+                  ),
+                  Positioned(
+                    left: 16,
+                    right: 16,
+                    bottom: 14,
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                            color: const Color(0xFFE03131),
+                            borderRadius: BorderRadius.circular(6)),
+                        child: const Text('প্রধান খবর',
+                            style: TextStyle(
+                                color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(top.title,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 19,
+                              fontWeight: FontWeight.w800,
+                              height: 1.35)),
+                      const SizedBox(height: 4),
+                      Text([top.source, top.ago].where((e) => e.isNotEmpty).join(' • '),
+                          style: const TextStyle(color: Colors.white70, fontSize: 12.5)),
+                    ]),
+                  ),
+                ]),
+              ),
+            ),
+            if (top.summary.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+                child: Text(top.summary,
+                    style: TextStyle(color: cs.onSurfaceVariant, height: 1.5)),
+              ),
+
+            // বাকি খবর: পাশে ছোট ছবি
+            for (var i = 1; i < items.length; i++)
+              InkWell(
+                onTap: () => _openNews(items[i]),
+                child: Container(
+                  margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? cs.surfaceContainerHigh
+                        : Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: _cNews.withValues(alpha: .10)),
+                  ),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    _newsImage(items[i].image, width: 112, height: 84, radius: 12),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Text(items[i].title,
-                            style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w600)),
-                        if (items[i].source.isNotEmpty)
-                          Text(items[i].source, style: TextStyle(fontSize: 12, color: cs.outline)),
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontSize: 15, fontWeight: FontWeight.w700, height: 1.35)),
+                        const SizedBox(height: 6),
+                        Text(
+                            '${Bangla.digits(i + 1)}. ${[items[i].source, items[i].ago].where((e) => e.isNotEmpty).join(' • ')}',
+                            style: TextStyle(fontSize: 12, color: cs.outline)),
                       ]),
                     ),
                   ]),
                 ),
               ),
-          ]),
-        ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Text('প্রতি ৩০ মিনিটে নিজে থেকে আপডেট হয় • খবরে চাপ দিলে পুরোটা পড়তে পারবেন',
+                  style: TextStyle(fontSize: 12, color: cs.outline)),
+            ),
+          ]);
+        },
       ),
     ]);
   }
