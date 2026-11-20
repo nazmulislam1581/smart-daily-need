@@ -75,7 +75,7 @@ jobs:
       - name: Create Windows project files
         shell: bash
         run: |
-          flutter create --org bd.bats --project-name smart_daily_need --platforms windows .
+          flutter create --org bd.bats --project-name smart_daily_need --platforms windows,android,ios .
           rm -rf test
 
       - name: Get packages and icon
