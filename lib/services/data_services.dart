@@ -252,6 +252,8 @@ class LocalContent {
   static Future<Map<String, dynamic>> story() => _pick<Map<String, dynamic>>('stories');
   static Future<Map<String, dynamic>> hadith() => _pick<Map<String, dynamic>>('hadith', salt: 7);
   static Future<String> joke() => _pick<String>('jokes', salt: 3);
+  static Future<Map<String, dynamic>> healthTip() =>
+      _pick<Map<String, dynamic>>('health_tips', salt: 11);
 
   /// আজকের দিবস। না থাকলে সামনের দিবসটি দেখায়।
   static Future<({List<String> today, String? nextName, DateTime? nextDate})> days(

@@ -20,6 +20,7 @@ const _cQuran = Color(0xFF087F5B);
 const _cHadith = Color(0xFF2B8A3E);
 const _cStory = Color(0xFFC2255C);
 const _cJoke = Color(0xFFF08C00);
+const _cHealth = Color(0xFFE03131);
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -33,7 +34,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int _tab = 0;
   int _minutes = 0;
 
-  Future<Map<String, dynamic>>? _weather, _prayer, _quran, _story, _hadith, _amol;
+  Future<Map<String, dynamic>>? _weather, _prayer, _quran, _story, _hadith, _amol, _health;
   Future<List<NewsItem>>? _news;
   Future<String>? _quote, _joke;
   Future<({List<String> today, String? nextName, DateTime? nextDate})>? _days;
@@ -179,6 +180,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _story = LocalContent.story();
       _hadith = LocalContent.hadith();
       _joke = LocalContent.joke();
+      _health = LocalContent.healthTip();
       _days = LocalContent.days(_hijriOffset);
       _news = NewsService.fetch(force: force);
       _quran = QuranService.fetch(force: force);
@@ -474,6 +476,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               Text(WeatherService.tip(w), style: TextStyle(color: cs.onSurfaceVariant)),
             ]);
           },
+        ),
+      ),
+
+      // স্বাস্থ্য টিপস
+      SectionCard(
+        icon: '🩺',
+        title: 'আজকের স্বাস্থ্য টিপস',
+        accent: _cHealth,
+        child: AsyncSection<Map<String, dynamic>>(
+          future: _health,
+          builder: (h) => Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(h['icon'], style: const TextStyle(fontSize: 34)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(h['title'],
+                    style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 4),
+                Text(h['text'], style: const TextStyle(fontSize: 15.5, height: 1.6)),
+              ]),
+            ),
+          ]),
         ),
       ),
 
