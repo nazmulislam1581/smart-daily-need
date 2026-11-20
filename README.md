@@ -81,3 +81,6 @@ assets/data/                 quotes, stories, quran_fallback
 **Md. Nazmul Islam**  
 ইমেইল: mail@nislam.info.bd  
 ওয়েবসাইট: [nislam.info.bd](https://nislam.info.bd)
+
+## ফন্ট
+অ্যাপে SolaimanLipi বাংলা ফন্ট ব্যবহার করা হয়েছে (ডিজাইন: সোলায়মান করিম, একুশে; SIL Open Font License)।

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'config.dart';
 import 'screens/home_screen.dart';
 
@@ -14,13 +13,12 @@ class SmartDailyNeedApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     ThemeData theme(Brightness b) {
-      final base = ThemeData(
+      // পুরো অ্যাপে SolaimanLipi বাংলা ফন্ট
+      return ThemeData(
         useMaterial3: true,
         brightness: b,
         colorSchemeSeed: const Color(0xFF0F7B5F),
-      );
-      return base.copyWith(
-        textTheme: GoogleFonts.hindSiliguriTextTheme(base.textTheme),
+        fontFamily: 'SolaimanLipi',
       );
     }
 
