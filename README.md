@@ -83,4 +83,4 @@ assets/data/                 quotes, stories, quran_fallback
 ওয়েবসাইট: [nislam.info.bd](https://nislam.info.bd)
 
 ## ফন্ট
-অ্যাপে SolaimanLipi বাংলা ফন্ট ব্যবহার করা হয়েছে (ডিজাইন: সোলায়মান করিম, একুশে; SIL Open Font License)।
+অ্যাপে SolaimanLipi বাংলা ফন্ট ব্যবহার করা হয়েছে (ডিজাইন: সোলায়মান করিম, একুশে; SIL Open Font License)। শিরোনাম ও নীতিবাক্যে BenSenHandwriting (ডিজাইন: সুব্রত সেন; GNU GPL)।

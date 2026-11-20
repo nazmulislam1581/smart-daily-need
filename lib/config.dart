@@ -2,6 +2,9 @@
 class AppConfig {
   static const appName = 'Smart Daily Need';
 
+  /// শিরোনাম ও নীতিবাক্যের জন্য হাতের লেখার মতো বাংলা ফন্ট
+  static const handFont = 'BenSenHandwriting';
+
   /// লোকেশন পাওয়া না গেলে ঢাকা ধরা হবে।
   static const defaultLat = 23.8103;
   static const defaultLng = 90.4125;

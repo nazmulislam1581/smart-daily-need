@@ -335,7 +335,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           Row(children: [
             const Expanded(
               child: Text(AppConfig.appName,
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white)),
+                  style: TextStyle(
+                      fontFamily: AppConfig.handFont,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white)),
             ),
             ..._actions(),
           ]),
@@ -855,7 +859,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         child: AsyncSection<String>(
           future: _quote,
           builder: (q) => Text('“$q”',
-              style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w600, height: 1.5)),
+              style: const TextStyle(
+                  fontFamily: AppConfig.handFont, fontSize: 23, height: 1.5)),
         ),
       ),
       SectionCard(
@@ -904,7 +909,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         child: AsyncSection<Map<String, dynamic>>(
           future: _story,
           builder: (s) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(s['title'], style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+            Text(s['title'],
+                style: const TextStyle(
+                    fontFamily: AppConfig.handFont, fontSize: 22, fontWeight: FontWeight.w700)),
             const SizedBox(height: 8),
             Text(s['body'], style: const TextStyle(fontSize: 15.5, height: 1.7)),
             const SizedBox(height: 10),

@@ -34,6 +34,9 @@ flutter:
     - family: SolaimanLipi
       fonts:
         - asset: assets/fonts/SolaimanLipi.ttf
+    - family: BenSenHandwriting
+      fonts:
+        - asset: assets/fonts/BenSenHandwriting.ttf
 
 # অ্যাপ আইকন:  dart run flutter_launcher_icons
 flutter_launcher_icons:

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../config.dart';
 
 /// প্রতিটি অংশের জন্য রঙিন আইকনসহ কার্ড
 class SectionCard extends StatelessWidget {
@@ -62,7 +63,8 @@ class SectionCard extends StatelessWidget {
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(title,
                       style: TextStyle(
-                          fontSize: 17,
+                          fontFamily: AppConfig.handFont,
+                          fontSize: 19,
                           fontWeight: FontWeight.w700,
                           color: dark ? Colors.white : accent)),
                   if (subtitle != null)
