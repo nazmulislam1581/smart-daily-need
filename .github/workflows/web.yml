@@ -1,0 +1,63 @@
+name: Build & deploy website
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'content/**'
+      - 'tools/**'
+  workflow_run:
+    workflows: ["Build Hadith & Quran content"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Create web project files
+        run: |
+          flutter create --org bd.bats --project-name smart_daily_need --platforms web .
+          rm -rf test
+          sed -i 's|<title>.*</title>|<title>আজকের দিন (Ajker Din – Today+)</title>|' web/index.html
+          cp assets/icon/icon.png web/favicon.png
+          cp assets/icon/icon.png web/icons/Icon-192.png
+          cp assets/icon/icon.png web/icons/Icon-512.png
+          cp assets/icon/icon.png web/icons/Icon-maskable-192.png
+          cp assets/icon/icon.png web/icons/Icon-maskable-512.png
+          python3 - <<'PY'
+          import json
+          p='web/manifest.json'; m=json.load(open(p))
+          m.update(name='আজকের দিন (Ajker Din – Today+)', short_name='আজকের দিন',
+                   background_color='#0B1641', theme_color='#14317A',
+                   description='প্রতিদিনের সব প্রয়োজনীয় তথ্য — Md. Nazmul Islam')
+          json.dump(m, open(p,'w'), ensure_ascii=False, indent=2)
+          PY
+      - run: flutter pub get
+      - name: Build website
+        run: flutter build web --release --base-href /smart-daily-need/
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+      - id: deploy
+        uses: actions/deploy-pages@v4

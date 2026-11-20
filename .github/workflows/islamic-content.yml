@@ -4,7 +4,8 @@ on:
   push:
     branches: [main]
     paths:
-      - 'tools/**'
+      - 'tools/build_islamic_content.py'
+      - 'tools/quran_refs.txt'
       - '.github/workflows/islamic-content.yml'
   workflow_dispatch:
 

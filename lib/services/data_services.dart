@@ -1,4 +1,4 @@
-import 'dart:io' show HttpDate;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:convert';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
@@ -153,6 +153,12 @@ class PrayerService {
   static String _hm(DateTime d) => '${d.hour}:${d.minute.toString().padLeft(2, '0')}';
   static String fmt(DateTime d) => Bangla.time12(_hm(d));
 
+  /// "6:12 AM"
+  static String fmtEn(DateTime d) {
+    final h12 = d.hour % 12 == 0 ? 12 : d.hour % 12;
+    return '$h12:${d.minute.toString().padLeft(2, '0')} ${d.hour < 12 ? 'AM' : 'PM'}';
+  }
+
   /// এখনকার ফরজ ওয়াক্ত (না থাকলে null) ও পরের ফরজ ওয়াক্ত
   static ({PrayerSlot? current, PrayerSlot next, Duration until}) status(Map<String, dynamic> t) {
     final all = slots(t).where((s) => s.fard).toList();
@@ -230,11 +236,22 @@ class NewsService {
 
   static DateTime? _date(String? s) {
     if (s == null || s.isEmpty) return null;
-    try {
-      return HttpDate.parse(s.replaceAll('+0000', 'GMT'));
-    } catch (_) {
-      return DateTime.tryParse(s);
+    // RFC 822: "Fri, 20 Nov 2026 18:21:13 +0000"
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    final m = RegExp(r'(\d{1,2}) (\w{3}) (\d{4}) (\d{2}):(\d{2}):?(\d{2})? ?([+-]\d{4}|GMT|UTC|Z)?')
+        .firstMatch(s);
+    if (m == null) return DateTime.tryParse(s);
+    final mon = months.indexOf(m.group(2)!) + 1;
+    if (mon == 0) return DateTime.tryParse(s);
+    var dt = DateTime.utc(int.parse(m.group(3)!), mon, int.parse(m.group(1)!), int.parse(m.group(4)!),
+        int.parse(m.group(5)!), int.parse(m.group(6) ?? '0'));
+    final tz = m.group(7);
+    if (tz != null && (tz.startsWith('+') || tz.startsWith('-'))) {
+      final sign = tz.startsWith('-') ? -1 : 1;
+      final off = Duration(hours: int.parse(tz.substring(1, 3)), minutes: int.parse(tz.substring(3, 5)));
+      dt = sign > 0 ? dt.subtract(off) : dt.add(off);
     }
+    return dt;
   }
 
   static String _image(XmlElement e) {
@@ -279,12 +296,29 @@ class NewsService {
 
   static Future<List<NewsItem>> fetch({bool force = false}) async {
     final data = await cached('news_v2', force: force, () async {
+      // ওয়েবসাইটে ব্রাউজারের নিয়মে সরাসরি RSS পড়া যায় না, তাই GitHub-এর news.json
+      Future<List<Map<String, dynamic>>> fromJson() async {
+        final r = await http.get(Uri.parse('${AppConfig.contentBaseUrl}news.json')).timeout(_timeout);
+        if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
+        return ((jsonDecode(utf8.decode(r.bodyBytes))['items'] as List))
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+      }
+
       List<Map<String, dynamic>> items;
-      try {
-        items = await _parse(AppConfig.newsRssUrl, AppConfig.newsSourceName);
-        if (items.isEmpty) throw Exception('empty');
-      } catch (_) {
-        items = await _parse(AppConfig.newsFallbackRssUrl, '');
+      if (kIsWeb) {
+        items = await fromJson();
+      } else {
+        try {
+          items = await _parse(AppConfig.newsRssUrl, AppConfig.newsSourceName);
+          if (items.isEmpty) throw Exception('empty');
+        } catch (_) {
+          try {
+            items = await fromJson();
+          } catch (_) {
+            items = await _parse(AppConfig.newsFallbackRssUrl, '');
+          }
+        }
       }
       return {'items': items};
     });
@@ -314,7 +348,7 @@ class LocalContent {
 
   /// এই কনটেন্টগুলো GitHub থেকে প্রতিদিন হালনাগাদ হয় (নতুন আইটেম যোগ হতে থাকে)।
   /// ইন্টারনেট না থাকলে শেষ ডাউনলোড বা অ্যাপের ভেতরের কপি ব্যবহার হয়।
-  static const _remoteBanks = {'quotes', 'stories', 'jokes', 'health_tips', 'gk_quiz'};
+  static const _remoteBanks = {'quotes', 'stories', 'jokes', 'health_tips', 'gk_quiz', 'famous_quotes'};
 
   static Future<dynamic> _load(String name) async {
     if (_remoteBanks.contains(name)) {
@@ -384,30 +418,32 @@ class LocalContent {
   static Future<Map<String, dynamic>> story() => _pick<Map<String, dynamic>>('stories');
   static Future<Map<String, dynamic>> hadith() => _pick<Map<String, dynamic>>('hadith', salt: 7);
   static Future<String> joke() => _pick<String>('jokes', salt: 3);
+  static Future<Map<String, dynamic>> famousQuote() =>
+      _pick<Map<String, dynamic>>('famous_quotes', salt: 5);
   static Future<Map<String, dynamic>> healthTip() =>
       _pick<Map<String, dynamic>>('health_tips', salt: 11);
+
+  /// নির্দিষ্ট তারিখের দিবসগুলো (ক্যালেন্ডারের জন্যও)
+  static Future<List<String>> daysOn(DateTime d, int hijriOffset) async {
+    final m = await _load('days') as Map<String, dynamic>;
+    final greg = (m['gregorian'] as Map<String, dynamic>);
+    final hij = (m['hijri'] as Map<String, dynamic>);
+    final gk = '${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    final r = <String>[...((greg[gk] as List?) ?? const []).cast<String>()];
+    final h = Bangla.hijri(d, hijriOffset);
+    final hd = hij['${h.month}-${h.day}'] as List?;
+    if (hd != null) r.addAll(hd.cast<String>().map((e) => '$e (চাঁদ দেখা সাপেক্ষে)'));
+    return r;
+  }
 
   /// আজকের দিবস। না থাকলে সামনের দিবসটি দেখায়।
   static Future<({List<String> today, String? nextName, DateTime? nextDate})> days(
       int hijriOffset) async {
-    final m = await _load('days') as Map<String, dynamic>;
-    final greg = (m['gregorian'] as Map<String, dynamic>);
-    final hij = (m['hijri'] as Map<String, dynamic>);
-    String gk(DateTime d) =>
-        '${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-    List<String> on(DateTime d) {
-      final r = <String>[...((greg[gk(d)] as List?) ?? const []).cast<String>()];
-      final h = Bangla.hijri(d, hijriOffset);
-      final hd = hij['${h.month}-${h.day}'] as List?;
-      if (hd != null) r.addAll(hd.cast<String>().map((e) => '$e (চাঁদ দেখা সাপেক্ষে)'));
-      return r;
-    }
-
     final now = DateTime.now();
-    final today = on(now);
+    final today = await daysOn(now, hijriOffset);
     for (var i = 1; i <= 60; i++) {
       final d = DateTime(now.year, now.month, now.day + i);
-      final l = on(d);
+      final l = await daysOn(d, hijriOffset);
       if (l.isNotEmpty) return (today: today, nextName: l.first, nextDate: d);
     }
     return (today: today, nextName: null, nextDate: null);
@@ -440,5 +476,25 @@ class LocalContent {
       period = h < 5 ? 'night' : h < 12 ? 'morning' : h < 16 ? 'day' : h < 20 ? 'evening' : 'night';
     }
     return m[period] as Map<String, dynamic>;
+  }
+}
+
+// ───────────────────────── ইতিহাসে আজকের দিন (Wikipedia "On this day", ইংরেজি)
+class HistoryService {
+  static Future<List<({String year, String text})>> onThisDay({bool force = false}) async {
+    final n = DateTime.now();
+    final mm = n.month.toString().padLeft(2, '0'), dd = n.day.toString().padLeft(2, '0');
+    final data = await cached('onthisday', force: force, () async {
+      final j = await _getJson(
+          'https://en.wikipedia.org/api/rest_v1/feed/onthisday/selected/$mm/$dd');
+      final list = ((j['selected'] as List?) ?? const []).take(6).map((e) => {
+            'y': '${e['year']}',
+            't': '${e['text']}',
+          }).toList();
+      return {'items': list};
+    });
+    return (data['items'] as List)
+        .map((e) => (year: '${e['y']}', text: '${e['t']}'))
+        .toList();
   }
 }

@@ -7,7 +7,10 @@ import '../services/data_services.dart';
 import '../services/location_service.dart';
 import '../services/notification_service.dart';
 import '../utils/bangla.dart';
+import '../services/bookmarks.dart';
+import '../widgets/painters.dart';
 import '../widgets/quiz_card.dart';
+import 'calendar_page.dart';
 import '../widgets/section_card.dart';
 
 // কার্ডের রং
@@ -42,6 +45,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<({List<String> today, String? nextName, DateTime? nextDate})>? _days;
   Future<({String label, List<Map<String, dynamic>> bd, List<Map<String, dynamic>> world})>? _quiz;
   Future<UserLocation>? _loc;
+  Future<Map<String, dynamic>>? _famous;
+  Future<List<({String year, String text})>>? _history;
+  String _name = '';
+  String _city = AppConfig.defaultCity;
   Timer? _ticker;
 
   /// প্রথমবার অনুমতি চায়, তারপর সামনের ৭ দিনের সকালের নোটিফিকেশন সাজায়
@@ -141,6 +148,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       setState(() => _hijriOffset = v);
       _days = LocalContent.days(v);
     });
+    Cache.getString('user_name', '').then((v) {
+      if (mounted) setState(() => _name = v);
+    });
+    Bookmarks.load();
     _load();
     // প্রতি মিনিটে: কাউন্টডাউন ও আমল হালনাগাদ, দিন বদলালে সব নতুন করে,
     // প্রতি ৩০ মিনিটে খবর এবং প্রতি ঘণ্টায় আবহাওয়া নিজে থেকে আপডেট
@@ -185,11 +196,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _joke = LocalContent.joke();
       _health = LocalContent.healthTip();
       _quiz = LocalContent.quiz();
+      _famous = LocalContent.famousQuote();
+      _history = HistoryService.onThisDay(force: force);
       _days = LocalContent.days(_hijriOffset);
       _news = NewsService.fetch(force: force);
       _quran = QuranService.fetch(force: force);
       final loc = LocationService.get();
       _loc = loc;
+      loc.then((l) {
+        if (mounted) setState(() => _city = l.city);
+      });
       _weather = loc.then((l) => WeatherService.fetch(l, force: force));
       _prayer = loc.then((l) => PrayerService.fetch(l, force: force));
       _amol = _prayer!.then((p) => LocalContent.amol(p), onError: (_) => LocalContent.amol(null));
@@ -244,28 +260,846 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   // ─────────────────────────────── BUILD
+  static const _navItems = [
+    (Icons.home_rounded, 'হোম'),
+    (Icons.grid_view_rounded, 'সকল বিভাগ'),
+    (Icons.bookmark_border_rounded, 'সংরক্ষিত'),
+    (Icons.calendar_month_outlined, 'ক্যালেন্ডার'),
+    (Icons.more_horiz_rounded, 'আরও'),
+  ];
+
+  bool get _wide => MediaQuery.of(context).size.width >= 900;
+
   @override
   Widget build(BuildContext context) {
-    final pages = [_todayPage(), _prayerPage(), _newsPage(), _readPage()];
+    final tabs = [
+      _homeTab(),
+      _sectionsTab(),
+      _bookmarksTab(),
+      _simpleTab('ক্যালেন্ডার', CalendarPage(hijriOffset: _hijriOffset)),
+      _moreTab(),
+    ];
+    if (_wide) {
+      return Scaffold(
+        body: Column(children: [
+          _topNav(),
+          Expanded(child: IndexedStack(index: _tab, children: tabs)),
+        ]),
+      );
+    }
     return Scaffold(
-      body: IndexedStack(index: _tab, children: pages),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        onDestinationSelected: (i) => setState(() => _tab = i),
-        destinations: const [
-          NavigationDestination(
-              icon: Icon(Icons.wb_sunny_outlined), selectedIcon: Icon(Icons.wb_sunny), label: 'আজ'),
-          NavigationDestination(
-              icon: Icon(Icons.mosque), selectedIcon: Icon(Icons.mosque), label: 'নামাজ'),
-          NavigationDestination(
-              icon: Icon(Icons.article_outlined), selectedIcon: Icon(Icons.article), label: 'খবর'),
-          NavigationDestination(
-              icon: Icon(Icons.menu_book_outlined), selectedIcon: Icon(Icons.menu_book), label: 'পাঠ'),
+      body: IndexedStack(index: _tab, children: tabs),
+      bottomNavigationBar: _bottomBar(),
+    );
+  }
+
+  Widget _appLogo(double size) => ClipRRect(
+        borderRadius: BorderRadius.circular(size * .22),
+        child: Image.asset('assets/icon/icon.png', width: size, height: size),
+      );
+
+  Widget _brand({Color color = Colors.white, double size = 22}) => Row(mainAxisSize: MainAxisSize.min, children: [
+        _appLogo(size * 1.9),
+        const SizedBox(width: 10),
+        Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          Text(AppConfig.appName,
+              style: TextStyle(
+                  fontFamily: AppConfig.handFont, fontSize: size, fontWeight: FontWeight.w700, color: color, height: 1.1)),
+          Text(AppConfig.appNameEn,
+              style: TextStyle(fontSize: size * .55, color: const Color(0xFFFFD43B), fontWeight: FontWeight.w600)),
+        ]),
+      ]);
+
+  /// বড় স্ক্রিনে (ওয়েবসাইট/ট্যাব/ডেস্কটপ) উপরের মেনু
+  Widget _topNav() {
+    return Container(
+      padding: EdgeInsets.fromLTRB(24, MediaQuery.of(context).padding.top + 10, 24, 10),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(colors: [Color(0xFF0B1641), Color(0xFF14317A)]),
+      ),
+      child: Row(children: [
+        _brand(size: 20),
+        const Spacer(),
+        for (var i = 0; i < _navItems.length; i++)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: TextButton.icon(
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.white,
+                backgroundColor: _tab == i ? Colors.white.withValues(alpha: .15) : Colors.transparent,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              ),
+              onPressed: () => setState(() => _tab = i),
+              icon: Icon(_navItems[i].$1, size: 20),
+              label: Text(_navItems[i].$2, style: const TextStyle(fontSize: 15)),
+            ),
+          ),
+        const SizedBox(width: 8),
+        _bellButton(),
+      ]),
+    );
+  }
+
+  Widget _bottomBar() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(colors: [Color(0xFF0B1E4A), Color(0xFF14317A)]),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
+          child: Row(children: [
+            for (var i = 0; i < _navItems.length; i++)
+              Expanded(
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () => setState(() => _tab = i),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: BoxDecoration(
+                      color: _tab == i ? const Color(0xFF2B5FD9) : Colors.transparent,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(_navItems[i].$1, color: Colors.white, size: 26),
+                      const SizedBox(height: 2),
+                      FittedBox(
+                        child: Text(_navItems[i].$2,
+                            style: const TextStyle(color: Colors.white, fontSize: 13)),
+                      ),
+                    ]),
+                  ),
+                ),
+              ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _bellButton() => FutureBuilder<({List<String> today, String? nextName, DateTime? nextDate})>(
+        future: _days,
+        builder: (c, s) {
+          final n = s.data?.today.length ?? 0;
+          return IconButton(
+            tooltip: 'নোটিফিকেশন',
+            onPressed: _openNotificationSettings,
+            icon: Badge(
+              isLabelVisible: n > 0,
+              label: Text(Bangla.digits(n)),
+              child: const Icon(Icons.notifications_none_rounded, color: Colors.white, size: 28),
+            ),
+          );
+        },
+      );
+
+  // ─────────────────────────────── হোম
+  Widget _homeTab() {
+    final wide = _wide;
+    final children = <Widget>[
+      Stack(clipBehavior: Clip.none, children: [
+        _hero(),
+        Positioned(left: 12, right: 12, bottom: -48, child: _infoStrip()),
+      ]),
+      const SizedBox(height: 60),
+    ];
+    if (wide) {
+      children.addAll([
+        _row([_prayerCard(), _specialCard(), _weatherTile()], flex: const [5, 3, 3]),
+        _row([_healthTile(), _newsTile(), _quranTile()], flex: const [3, 4, 4]),
+        _smallGrid(true),
+        _row([_quizCard(), _amolCard(), _jokeCard()], flex: const [1, 1, 1], padded: false),
+      ]);
+    } else {
+      children.addAll([
+        _prayerCard(),
+        _weatherTile(),
+        _row([_healthTile(compact: true), _specialCard(compact: true)]),
+        _newsTile(),
+        _quranTile(),
+        _smallGrid(false),
+        _quizCard(),
+        _amolCard(),
+        _jokeCard(),
+      ]);
+    }
+    children.addAll([_developerCard(), const SizedBox(height: 16)]);
+
+    return RefreshIndicator(
+      onRefresh: () => _load(force: true),
+      child: ListView(
+        padding: EdgeInsets.zero,
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1280),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
+            ),
+          ),
         ],
       ),
     );
   }
 
+  /// এক সারিতে কয়েকটি কার্ড, সমান উচ্চতায়
+  Widget _row(List<Widget> items, {List<int>? flex, bool padded = true}) => Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        child: IntrinsicHeight(
+          child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            for (var i = 0; i < items.length; i++) ...[
+              if (i > 0) const SizedBox(width: 12),
+              Expanded(
+                flex: flex == null ? 1 : flex[i],
+                child: padded ? items[i] : MediaQuery.removePadding(context: context, child: items[i]),
+              ),
+            ],
+          ]),
+        ),
+      );
+
+  // ─────────────────────────────── হেডার
+  Widget _hero() {
+    final mood = _mood();
+    final h = DateTime.now().hour;
+    final night = h >= 18 || h < 5;
+    final top = _wide ? 0.0 : MediaQuery.of(context).padding.top;
+    return SizedBox(
+      height: (_wide ? 210 : 250) + top,
+      child: ClipRRect(
+        borderRadius: _wide ? BorderRadius.zero : const BorderRadius.vertical(bottom: Radius.circular(28)),
+        child: Stack(children: [
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: night ? const [Color(0xFF0B1641), Color(0xFF1E3A8A)] : mood.colors,
+                ),
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: CustomPaint(
+              painter: SkyPainter(
+                night: night,
+                silhouette: night ? const Color(0xFF0A1233) : Colors.black.withValues(alpha: .22),
+              ),
+            ),
+          ),
+          if (!_wide)
+            Positioned(
+              left: 16,
+              right: 4,
+              top: top + 8,
+              child: Row(children: [
+                _brand(size: 20),
+                const Spacer(),
+                _bellButton(),
+                IconButton(
+                  tooltip: 'সেটিংস',
+                  onPressed: () => setState(() => _tab = 4),
+                  icon: const Icon(Icons.settings, color: Colors.white, size: 26),
+                ),
+              ]),
+            ),
+          Positioned(
+            left: _wide ? 0 : 20,
+            right: _wide ? 0 : null,
+            top: top + (_wide ? 34 : 78),
+            child: Column(
+              crossAxisAlignment: _wide ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+              children: [
+                Row(mainAxisSize: MainAxisSize.min, children: [
+                  Text(mood.greet,
+                      style: TextStyle(
+                        fontFamily: AppConfig.handFont,
+                        fontSize: _wide ? 46 : 38,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFFFFD43B),
+                        height: 1.1,
+                      )),
+                  const SizedBox(width: 8),
+                  Text(mood.emoji, style: const TextStyle(fontSize: 30)),
+                ]),
+                const SizedBox(height: 4),
+                Text('আল্লাহর রহমত আপনার উপর বর্ষিত হোক',
+                    style: TextStyle(color: Colors.white.withValues(alpha: .92), fontSize: 15)),
+                const SizedBox(height: 6),
+                InkWell(
+                  onTap: _editName,
+                  child: Text(_name.isEmpty ? '👤 আপনার নাম লিখুন ✎' : '👤 স্বাগতম, $_name',
+                      style: const TextStyle(color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w600)),
+                ),
+              ],
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _infoStrip() {
+    final now = DateTime.now();
+    final season = Bangla.season(now);
+    final hj = Bangla.hijriDate(now, _hijriOffset).replaceAll(' হিজরি', '');
+    final bdate = Bangla.banglaDate(now);
+    Widget cell(IconData icon, String main, String sub, {VoidCallback? onTap}) => Expanded(
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Icon(icon, color: const Color(0xFF1E3A8A), size: 22),
+                const SizedBox(height: 4),
+                Text(main,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: Color(0xFF1A1B1E), height: 1.3)),
+                Text(sub,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF495057))),
+              ]),
+            ),
+          ),
+        );
+    Widget div() => Container(width: 1, height: 54, color: const Color(0xFF1E3A8A).withValues(alpha: .2));
+    final cells = <Widget>[
+      cell(Icons.calendar_month,
+          '${Bangla.weekday(now).replaceAll('বার', '')}, ${Bangla.digits(now.day)} ${Bangla.englishMonths[now.month - 1]} ${Bangla.digits(now.year)}',
+          '(${Bangla.weekday(now)})'),
+      div(),
+      cell(Icons.event_note, bdate.substring(0, bdate.indexOf('(')).replaceAll(',', '').trim(), 'বাংলা তারিখ'),
+      div(),
+      cell(Icons.nightlight_round, hj.replaceAll(',', ''), 'হিজরি', onTap: _editHijri),
+      if (_wide) ...[
+        div(),
+        cell(Icons.eco, season.bn, '(ঋতু)'),
+        div(),
+        Expanded(child: _LiveClock(city: _city)),
+      ],
+    ];
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1240),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF1F5FF),
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .18), blurRadius: 14, offset: const Offset(0, 6))],
+          ),
+          child: Row(children: cells),
+        ),
+      ),
+    );
+  }
+
+  // ─────────────────────────────── নামাজ কার্ড (লাইভ কাউন্টডাউন)
+  Widget _prayerCard() {
+    return Container(
+      margin: _wide ? EdgeInsets.zero : const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(colors: [Color(0xFFF4FCE3), Color(0xFFFFF9DB)]),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFD8F5A2)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: FutureBuilder<Map<String, dynamic>>(
+        future: _prayer,
+        builder: (c, s) {
+          final header = Container(
+            padding: const EdgeInsets.fromLTRB(12, 6, 24, 6),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(colors: [Color(0xFF2B8A3E), Color(0xFF69DB7C)]),
+              borderRadius: BorderRadius.only(bottomRight: Radius.circular(30)),
+            ),
+            child: const Text('🕌  আজকের নামাজের সময়',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15)),
+          );
+          if (!s.hasData) {
+            return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              header,
+              SizedBox(
+                height: 120,
+                child: Center(
+                  child: s.connectionState == ConnectionState.done
+                      ? const Text('নামাজের সময় আনা যায়নি', style: TextStyle(color: Colors.grey))
+                      : const CircularProgressIndicator(strokeWidth: 2.5),
+                ),
+              ),
+            ]);
+          }
+          final t = s.data!;
+          final st = PrayerService.status(t);
+          final fard = PrayerService.slots(t).where((e) => e.fard).toList();
+          final cur = st.current;
+          final target = cur?.end ?? st.next.start;
+          return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Align(alignment: Alignment.centerLeft, child: header),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+              child: Row(children: [
+                const Text('🕌', style: TextStyle(fontSize: 46)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(cur != null ? '${cur.name} নামাজ' : '${st.next.name} আসছে',
+                        style: const TextStyle(
+                            fontFamily: AppConfig.handFont,
+                            fontSize: 24,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF0B3D20))),
+                    Text(
+                        cur != null
+                            ? 'সময় শেষ: ${PrayerService.fmt(cur.end)}'
+                            : 'শুরু: ${PrayerService.fmt(st.next.start)}',
+                        style: const TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF2B8A3E))),
+                  ]),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0B5D2A),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Column(children: [
+                    Text(cur != null ? 'বাকি' : 'শুরু হতে',
+                        style: const TextStyle(color: Colors.white70, fontSize: 12.5)),
+                    _Countdown(target: target, onDone: () => setState(() {})),
+                  ]),
+                ),
+              ]),
+            ),
+            if (cur != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text('পরবর্তী নামাজ: ${st.next.name}  |  শুরু: ${PrayerService.fmt(st.next.start)}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 13.5, color: Color(0xFF343A40))),
+              ),
+            const SizedBox(height: 8),
+            Container(
+              margin: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: .75),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFD3F9D8)),
+              ),
+              child: Row(children: [
+                for (var i = 0; i < fard.length; i++)
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => _push(_prayerPage),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        decoration: BoxDecoration(
+                          color: fard[i].isNow ? const Color(0xFF2B8A3E).withValues(alpha: .15) : null,
+                          border: i > 0 ? const Border(left: BorderSide(color: Color(0xFFD3F9D8))) : null,
+                        ),
+                        child: Column(children: [
+                          Text(fard[i].name,
+                              style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: Color(0xFF1A1B1E))),
+                          FittedBox(
+                            child: Text(PrayerService.fmtEn(fard[i].start),
+                                style: const TextStyle(fontSize: 13, color: Color(0xFF343A40))),
+                          ),
+                        ]),
+                      ),
+                    ),
+                  ),
+              ]),
+            ),
+          ]);
+        },
+      ),
+    );
+  }
+
+  // ─────────────────────────────── আজকের বিশেষ দিন
+  Widget _specialCard({bool compact = false}) {
+    return FutureBuilder<({List<String> today, String? nextName, DateTime? nextDate})>(
+      future: _days,
+      builder: (c, s) {
+        final d = s.data;
+        final today = d?.today ?? const <String>[];
+        final has = today.isNotEmpty;
+        final headline = has ? today.first : (d?.nextName ?? '...');
+        final sub = has
+            ? (today.length > 1 ? today.skip(1).join(' • ') : 'আজ ${Bangla.englishDate(DateTime.now())}')
+            : (d?.nextDate != null
+                ? 'আসছে ${Bangla.digits(d!.nextDate!.day)} ${Bangla.englishMonths[d.nextDate!.month - 1]}'
+                : '');
+        return _tile(
+          colors: const [Color(0xFFFFF9DB), Color(0xFFFFF3BF)],
+          border: const Color(0xFFFFE066),
+          onTap: _showSpecialDetails,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _tileTitle('⭐', has ? 'আজকের বিশেষ দিন' : 'সামনের বিশেষ দিন', const Color(0xFF5C3D00)),
+            const SizedBox(height: 8),
+            if (!compact)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(height: 90, width: double.infinity, child: CustomPaint(painter: BannerPainter())),
+              ),
+            if (!compact) const SizedBox(height: 8),
+            Text(headline,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    fontFamily: AppConfig.handFont,
+                    fontSize: compact ? 18 : 22,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF0B3D20))),
+            const SizedBox(height: 4),
+            Text(sub,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 13, color: Color(0xFF495057))),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+              decoration: BoxDecoration(color: const Color(0xFF1C4FB8), borderRadius: BorderRadius.circular(20)),
+              child: const Text('বিস্তারিত দেখুন →', style: TextStyle(color: Colors.white, fontSize: 12.5)),
+            ),
+          ]),
+        );
+      },
+    );
+  }
+
+  void _showSpecialDetails() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (c) => Scaffold(
+        appBar: AppBar(
+          title: const Text('আজকের বিশেষ দিন',
+              style: TextStyle(fontFamily: AppConfig.handFont, fontWeight: FontWeight.w700)),
+          foregroundColor: Colors.white,
+          backgroundColor: const Color(0xFF2B8A3E),
+        ),
+        body: ListView(padding: const EdgeInsets.all(16), children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: SizedBox(height: 160, child: CustomPaint(painter: BannerPainter())),
+          ),
+          const SizedBox(height: 14),
+          FutureBuilder<({List<String> today, String? nextName, DateTime? nextDate})>(
+            future: _days,
+            builder: (c, s) {
+              final d = s.data;
+              if (d == null) return const LinearProgressIndicator();
+              return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                if (d.today.isEmpty)
+                  const Text('আজ উল্লেখযোগ্য কোনো দিবস নেই।', style: TextStyle(fontSize: 16))
+                else
+                  ...d.today.map((e) => Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Text('✦ $e',
+                            style: const TextStyle(
+                                fontFamily: AppConfig.handFont, fontSize: 24, fontWeight: FontWeight.w700)),
+                      )),
+                if (d.nextName != null) ...[
+                  const SizedBox(height: 6),
+                  Pill('সামনে: ${d.nextName} • ${Bangla.digits(d.nextDate!.day)} ${Bangla.englishMonths[d.nextDate!.month - 1]}',
+                      color: _cDibos),
+                ],
+              ]);
+            },
+          ),
+          const SizedBox(height: 20),
+          const Text('ইতিহাসে আজকের দিনে',
+              style: TextStyle(fontFamily: AppConfig.handFont, fontSize: 22, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          FutureBuilder<List<({String year, String text})>>(
+            future: _history,
+            builder: (c, h) {
+              if (h.connectionState != ConnectionState.done) return const LinearProgressIndicator();
+              final items = h.data ?? const [];
+              if (items.isEmpty) return const Text('তথ্য পাওয়া যায়নি।');
+              return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                ...items.map((e) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Pill(Bangla.digits(e.year), color: const Color(0xFF2B8A3E)),
+                        const SizedBox(width: 10),
+                        Expanded(child: Text(e.text, style: const TextStyle(height: 1.5))),
+                      ]),
+                    )),
+                Text('সূত্র: Wikipedia (ইংরেজি)',
+                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.outline)),
+              ]);
+            },
+          ),
+        ]),
+      ),
+    ));
+  }
+
+  // ─────────────────────────────── আবহাওয়া
+  Widget _weatherTile() => Padding(
+        padding: _wide ? EdgeInsets.zero : const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        child: _tile(
+          colors: const [Color(0xFF1864AB), Color(0xFF339AF0)],
+          child: Stack(children: [
+            Positioned(
+              left: -12,
+              right: -12,
+              bottom: -12,
+              height: 40,
+              child: CustomPaint(painter: SkylinePainter(Colors.white.withValues(alpha: .12))),
+            ),
+            FutureBuilder<Map<String, dynamic>>(
+              future: _weather,
+              builder: (c, s) {
+                final w = s.data;
+                if (w == null) {
+                  return Column(children: [
+                    _tileTitle('🌤️', 'আজকের আবহাওয়া', Colors.white),
+                    const SizedBox(height: 30),
+                    s.connectionState == ConnectionState.done
+                        ? const Text('তথ্য পাওয়া যায়নি', style: TextStyle(color: Colors.white70))
+                        : const CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                    const SizedBox(height: 30),
+                  ]);
+                }
+                final (emoji, desc) = WeatherService.describe(w['code'] as int);
+                final umbrella = (w['rain'] as int) >= 50;
+                final details = DefaultTextStyle(
+                  style: const TextStyle(color: Colors.white, fontSize: 13, fontFamily: 'SolaimanLipi', height: 1.6),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                    Text('☔ বৃষ্টি: ${Bangla.digits(w['rain'])}%  |  💧 আর্দ্রতা: ${Bangla.digits(w['humidity'])}%'),
+                    Text('💨 বাতাস: ${Bangla.digits(w['wind'])} কিমি/ঘ.'),
+                    Text('🌡️ ${Bangla.digits(w['min'])}° – ${Bangla.digits(w['max'])}°সে  •  📍 ${w['city']}'),
+                  ]),
+                );
+                return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  _tileTitle('🌤️', 'আজকের আবহাওয়া', Colors.white),
+                  const SizedBox(height: 8),
+                  Row(children: [
+                    Text(emoji, style: const TextStyle(fontSize: 46)),
+                    const SizedBox(width: 10),
+                    Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('${Bangla.digits(w['temp'])}°C',
+                          style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w800, color: Colors.white)),
+                      Text(desc, style: const TextStyle(color: Colors.white, fontSize: 14)),
+                    ]),
+                  ]),
+                  const SizedBox(height: 8),
+                  details,
+                  const SizedBox(height: 10),
+                  Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                      decoration: BoxDecoration(
+                          color: const Color(0xFFFFD43B), borderRadius: BorderRadius.circular(20)),
+                      child: Text(umbrella ? '☂️ আজ ছাতা লাগবে!' : '😎 আজ ছাতা লাগবে না',
+                          style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF1A1B1E))),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ]);
+              },
+            ),
+          ]),
+        ),
+      );
+
+  Widget _healthTile({bool compact = false}) => FutureBuilder<Map<String, dynamic>>(
+        future: _health,
+        builder: (c, s) {
+          final h = s.data;
+          return _tile(
+            colors: const [Color(0xFFEBFBEE), Color(0xFFF4FCE3)],
+            border: const Color(0xFFB2F2BB),
+            onTap: h == null
+                ? null
+                : () => _openDetail('🩺', 'আজকের স্বাস্থ্য পরামর্শ', '${h['title']}\n\n${h['text']}', '', 'স্বাস্থ্য', _cHealth),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _tileTitle('❤️', compact ? 'স্বাস্থ্য পরামর্শ' : 'আজকের স্বাস্থ্য পরামর্শ', const Color(0xFFC92A2A)),
+              const SizedBox(height: 8),
+              if (h != null)
+                Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(h['icon'] as String, style: TextStyle(fontSize: compact ? 30 : 44)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(h['title'] as String,
+                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF1A1B1E))),
+                      const SizedBox(height: 2),
+                      Text(h['text'] as String,
+                          maxLines: compact ? 3 : 5,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 13, height: 1.4, color: Color(0xFF343A40))),
+                    ]),
+                  ),
+                ]),
+            ]),
+          );
+        },
+      );
+
+  // ─────────────────────────────── খবর
+  Widget _newsTile() => Padding(
+        padding: _wide ? EdgeInsets.zero : const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        child: _tile(
+          colors: const [Color(0xFF14317A), Color(0xFF1C4FB8)],
+          child: FutureBuilder<List<NewsItem>>(
+            future: _news,
+            builder: (c, s) {
+              final items = s.data ?? const <NewsItem>[];
+              final head = Row(children: [
+                const Expanded(
+                  child: Text('📰  আজকের শীর্ষ ১০ সংবাদ',
+                      style: TextStyle(
+                          fontFamily: AppConfig.handFont, fontSize: 19, fontWeight: FontWeight.w700, color: Colors.white)),
+                ),
+                InkWell(
+                  onTap: () => _push(_newsPage),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
+                    child: const Text('সব দেখুন →',
+                        style: TextStyle(color: Color(0xFF1C4FB8), fontSize: 12.5, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+              ]);
+              if (items.isEmpty) {
+                return Column(children: [
+                  head,
+                  const SizedBox(height: 30),
+                  s.connectionState == ConnectionState.done
+                      ? const Text('খবর পাওয়া যায়নি', style: TextStyle(color: Colors.white70))
+                      : const CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                  const SizedBox(height: 30),
+                ]);
+              }
+              final top = items.first;
+              return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                head,
+                const SizedBox(height: 10),
+                InkWell(
+                  onTap: () => _openNews(top),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    _newsImage(top.image, width: 120, height: 86, radius: 12),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(top.title,
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w700, height: 1.35)),
+                        const SizedBox(height: 4),
+                        Text([top.ago, top.source].where((e) => e.isNotEmpty).join(' • '),
+                            style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                      ]),
+                    ),
+                  ]),
+                ),
+                const SizedBox(height: 8),
+                for (var i = 1; i < items.length && i < (_wide ? 4 : 5); i++)
+                  InkWell(
+                    onTap: () => _openNews(items[i]),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text('${Bangla.digits(i + 1)}. ',
+                            style: const TextStyle(color: Color(0xFFFFD43B), fontWeight: FontWeight.w800)),
+                        Expanded(
+                          child: Text(items[i].title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: Colors.white, fontSize: 13.5, height: 1.35)),
+                        ),
+                      ]),
+                    ),
+                  ),
+              ]);
+            },
+          ),
+        ),
+      );
+
+  // ─────────────────────────────── কুরআন
+  Widget _quranTile() => Padding(
+        padding: _wide ? EdgeInsets.zero : const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        child: FutureBuilder<Map<String, dynamic>>(
+          future: _quran,
+          builder: (c, s) {
+            final q = s.data;
+            return _tile(
+              colors: const [Color(0xFFF8F9FA), Color(0xFFEBFBEE)],
+              border: const Color(0xFFB2F2BB),
+              onTap: q == null
+                  ? null
+                  : () => _openDetail('📖', 'কুরআনের বাণী', q['bangla'] as String, q['ref'] as String, 'কুরআন',
+                      _cQuran, arabic: q['arabic'] as String),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                _tileTitle('📖', 'আজকের কুরআনের বাণী', const Color(0xFF087F5B)),
+                const SizedBox(height: 8),
+                if (q != null) ...[
+                  if ((q['arabic'] as String).isNotEmpty)
+                    Text(q['arabic'] as String,
+                        textAlign: TextAlign.center,
+                        textDirection: TextDirection.rtl,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 22, height: 1.8, color: Color(0xFF1A1B1E))),
+                  const SizedBox(height: 4),
+                  Text('“${q['bangla']}”',
+                      textAlign: TextAlign.center,
+                      maxLines: 4,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 14.5, height: 1.5, color: Color(0xFF1A1B1E))),
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Text('— ${q['ref']}', style: const TextStyle(fontSize: 12, color: Color(0xFF087F5B))),
+                  ),
+                ],
+              ]),
+            );
+          },
+        ),
+      );
+
+  Widget _amolCard() => AsyncSection<Map<String, dynamic>>(
+        future: _amol,
+        builder: (a) => SectionCard(
+          icon: '🤲',
+          title: a['title'] as String,
+          subtitle: a['note'] as String,
+          accent: _cAmol,
+          child: Column(
+            children: (a['items'] as List).map((e) => _amolTile(e as Map<String, dynamic>)).toList(),
+          ),
+        ),
+      );
+
+  Widget _jokeCard() => SectionCard(
+        icon: '😄',
+        title: 'আজকের কৌতুক',
+        accent: _cJoke,
+        trailing: FutureBuilder<String>(
+          future: _joke,
+          builder: (c, s) => s.hasData
+              ? _bookmarkButton(Bookmark('কৌতুক', 'আজকের কৌতুক', s.data!), _cJoke)
+              : const SizedBox.shrink(),
+        ),
+        child: AsyncSection<String>(
+          future: _joke,
+          builder: (j) => Text(j, style: const TextStyle(fontSize: 16, height: 1.6)),
+        ),
+      );
+
+  /// সাব-পেজ / ট্যাবের সাধারণ কাঠামো (গ্রেডিয়েন্ট অ্যাপবার)
   Widget _page(List<Widget> children, {Widget? header, String? title}) {
     final mood = _mood();
     return RefreshIndicator(
@@ -282,12 +1116,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               foregroundColor: Colors.white,
               backgroundColor: mood.colors.first,
               flexibleSpace: FlexibleSpaceBar(
-                title: Text(title ?? '', style: const TextStyle(fontWeight: FontWeight.w800)),
+                title: Text(title ?? '',
+                    style: const TextStyle(fontFamily: AppConfig.handFont, fontWeight: FontWeight.w700)),
                 background: DecoratedBox(
                   decoration: BoxDecoration(gradient: LinearGradient(colors: mood.colors)),
                 ),
               ),
-              actions: _actions(),
             ),
           const SliverToBoxAdapter(child: SizedBox(height: 16)),
           SliverList.list(children: [...children, const SizedBox(height: 24)]),
@@ -296,245 +1130,354 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  List<Widget> _actions() => [
-        IconButton(
-          tooltip: 'অ্যাপ সম্পর্কে',
-          icon: const Icon(Icons.info_outline, color: Colors.white),
-          onPressed: _showAbout,
-        ),
-        IconButton(
-          tooltip: 'নোটিফিকেশন',
-          icon: const Icon(Icons.notifications_outlined, color: Colors.white),
-          onPressed: _openNotificationSettings,
-        ),
-        IconButton(
-          tooltip: 'রিফ্রেশ',
-          icon: const Icon(Icons.refresh, color: Colors.white),
-          onPressed: () => _load(force: true),
-        ),
-      ];
-
-  // ─────────────────────────────── হেডার
-  Widget _hero() {
+  Widget _simpleTab(String title, Widget body) {
     final mood = _mood();
-    final now = DateTime.now();
-    final top = MediaQuery.of(context).padding.top;
-    return Container(
-      padding: EdgeInsets.fromLTRB(20, top + 8, 8, 22),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: mood.colors,
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(32)),
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(title, style: const TextStyle(fontFamily: AppConfig.handFont, fontWeight: FontWeight.w700)),
+        foregroundColor: Colors.white,
+        flexibleSpace: DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(colors: mood.colors))),
       ),
-      child: DefaultTextStyle(
-        style: const TextStyle(color: Colors.white, fontSize: 15),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            const Expanded(
-              child: Text(AppConfig.appName,
-                  style: TextStyle(
-                      fontFamily: AppConfig.handFont,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white)),
-            ),
-            ..._actions(),
+      body: body,
+    );
+  }
+
+  /// নতুন পাতায় খোলে (নামাজ, খবর, পাঠ ইত্যাদি)
+  void _push(Widget Function() page) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => Scaffold(body: page()),
+    ));
+  }
+
+  Widget _pair(Widget left, Widget right, {int leftFlex = 1, int rightFlex = 1}) => Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        child: IntrinsicHeight(
+          child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Expanded(flex: leftFlex, child: left),
+            const SizedBox(width: 10),
+            Expanded(flex: rightFlex, child: right),
           ]),
-          const SizedBox(height: 10),
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('${mood.greet} • ${Bangla.weekday(now)}',
-                      style: TextStyle(color: Colors.white.withValues(alpha: .85))),
-                  const SizedBox(height: 2),
-                  Text(Bangla.englishDate(now),
-                      style: const TextStyle(
-                          color: Colors.white, fontSize: 28, fontWeight: FontWeight.w800)),
-                ]),
-              ),
-              Text(mood.emoji, style: const TextStyle(fontSize: 44)),
-            ]),
-          ),
-          const SizedBox(height: 12),
-          _glass(Column(children: [
-            _dateRow('📅', Bangla.banglaDate(now)),
-            const SizedBox(height: 6),
-            InkWell(
-              onTap: _editHijri,
-              child: _dateRow('🌙', '${Bangla.hijriDate(now, _hijriOffset)}  ✎'),
+        ),
+      );
+
+  Widget _tile({
+    required Widget child,
+    required List<Color> colors,
+    Color border = Colors.transparent,
+    VoidCallback? onTap,
+  }) =>
+      Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: onTap,
+          child: Ink(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: colors, begin: Alignment.topLeft, end: Alignment.bottomRight),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: border),
             ),
-          ])),
-          const SizedBox(height: 10),
-          FutureBuilder<Map<String, dynamic>>(
-            future: _prayer,
-            builder: (c, s) {
-              if (!s.hasData) return const SizedBox.shrink();
-              final st = PrayerService.status(s.data!);
-              return InkWell(
-                onTap: () => setState(() => _tab = 1),
-                child: _glass(Row(children: [
-                  const Text('🕌', style: TextStyle(fontSize: 22)),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      if (st.current != null)
-                        Text(
-                            'এখন চলছে: ${st.current!.name} • শেষ ${PrayerService.fmt(st.current!.end)}',
-                            style: const TextStyle(fontWeight: FontWeight.w700, color: Colors.white)),
-                      Text(
-                          'পরবর্তী ${st.next.name} ${PrayerService.fmt(st.next.start)} • বাকি ${PrayerService.duration(st.until)}',
-                          style: TextStyle(color: Colors.white.withValues(alpha: .9))),
-                    ]),
-                  ),
-                  const Icon(Icons.chevron_right, color: Colors.white),
-                ])),
-              );
-            },
+            child: child,
           ),
+        ),
+      );
+
+  Widget _tileTitle(String icon, String title, Color color) => Row(children: [
+        Text(icon, style: const TextStyle(fontSize: 20)),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontFamily: AppConfig.handFont, fontSize: 18, fontWeight: FontWeight.w700, color: color)),
+        ),
+      ]);
+
+  Widget _famousTile() => FutureBuilder<Map<String, dynamic>>(
+        future: _famous,
+        builder: (c, s) {
+          final f = s.data;
+          return _tile(
+            colors: const [Color(0xFFF3D9FA), Color(0xFFE5DBFF)],
+            border: const Color(0xFFD0BFFF),
+            onTap: f == null
+                ? null
+                : () => _openDetail('💬', 'মনীষীদের বাণী', f['text'] as String, f['by'] as String, 'বাণী', const Color(0xFF7048E8)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _tileTitle('💬', 'মনীষীদের বাণী', const Color(0xFF5F3DC4)),
+              const SizedBox(height: 6),
+              if (f != null) ...[
+                Text('“${f['text']}”',
+                    maxLines: 4,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 13.5, height: 1.45, color: Color(0xFF1A1B1E))),
+                const SizedBox(height: 4),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Text('— ${f['by']}', style: const TextStyle(fontSize: 11.5, color: Color(0xFF5F3DC4))),
+                ),
+              ],
+            ]),
+          );
+        },
+      );
+
+  Widget _smallGrid(bool wide) {
+    Widget card(String icon, String title, Color bg, Color fg, Future<dynamic>? future,
+        String Function(dynamic) preview, void Function(dynamic) open, {String? button}) {
+      return FutureBuilder<dynamic>(
+        future: future,
+        builder: (c, s) => _tile(
+          colors: [bg, bg.withValues(alpha: .7)],
+          border: fg.withValues(alpha: .25),
+          onTap: s.hasData ? () => open(s.data) : null,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _tileTitle(icon, title, fg),
+            const SizedBox(height: 6),
+            if (s.hasData)
+              Text(preview(s.data),
+                  maxLines: 5,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 13.5, height: 1.45, color: Color(0xFF1A1B1E))),
+            if (button != null && s.hasData) ...[
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                decoration: BoxDecoration(color: fg, borderRadius: BorderRadius.circular(20)),
+                child: Text(button, style: const TextStyle(color: Colors.white, fontSize: 12.5)),
+              ),
+            ],
+          ]),
+        ),
+      );
+    }
+
+    final cards = [
+      card('🕋', 'আজকের হাদিস', const Color(0xFFFFF4E6), const Color(0xFFD9480F), _hadith,
+          (h) => '“${h['text']}”\n— ${h['ref']}',
+          (h) => _openDetail('🕋', 'আজকের হাদিস', h['text'] as String, h['ref'] as String, 'হাদিস', _cHadith)),
+      card('📚', 'শিক্ষণীয় গল্প', const Color(0xFFE3FAFC), const Color(0xFF0B7285), _story,
+          (s) => s['title'] as String,
+          (s) => _openDetail('📚', s['title'] as String, '${s['body']}\n\nশিক্ষা: ${s['moral']}', '', 'গল্প', _cStory),
+          button: 'পড়ুন →'),
+      card('💡', 'আজকের নীতিবাক্য', const Color(0xFFEBFBEE), const Color(0xFF2B8A3E), _quote,
+          (q) => '“$q”',
+          (q) => _openDetail('💡', 'আজকের নীতিবাক্য', q as String, '', 'নীতিবাক্য', _cQuote)),
+      card('💬', 'মনীষীর বাণী', const Color(0xFFFFF0F6), const Color(0xFFC2255C), _famous,
+          (f) => '“${f['text']}”\n— ${f['by']}',
+          (f) => _openDetail('💬', 'মনীষীর বাণী', f['text'] as String, f['by'] as String, 'বাণী', const Color(0xFFC2255C))),
+    ];
+    if (wide) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        child: IntrinsicHeight(
+          child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            for (var i = 0; i < cards.length; i++) ...[
+              if (i > 0) const SizedBox(width: 10),
+              Expanded(child: cards[i]),
+            ],
+          ]),
+        ),
+      );
+    }
+    return Column(children: [_pair(cards[0], cards[1]), _pair(cards[2], cards[3])]);
+  }
+
+  // ─────────────────────────────── বিস্তারিত পাতা ও বুকমার্ক
+  Widget _bookmarkButton(Bookmark b, Color color) => ValueListenableBuilder<List<Bookmark>>(
+        valueListenable: Bookmarks.items,
+        builder: (c, _, __) {
+          final saved = Bookmarks.has(b);
+          return IconButton(
+            tooltip: saved ? 'বুকমার্ক থেকে সরান' : 'বুকমার্ক করুন',
+            icon: Icon(saved ? Icons.bookmark : Icons.bookmark_border, color: color),
+            onPressed: () => Bookmarks.toggle(b),
+          );
+        },
+      );
+
+  void _openDetail(String icon, String title, String text, String ref, String type, Color accent,
+      {String arabic = ''}) {
+    final b = Bookmark(type, title, text, ref: ref);
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (c) => Scaffold(
+        appBar: AppBar(
+          title: Text(title, style: const TextStyle(fontFamily: AppConfig.handFont, fontWeight: FontWeight.w700)),
+          foregroundColor: Colors.white,
+          backgroundColor: accent,
+          actions: [_bookmarkButton(b, Colors.white)],
+        ),
+        body: ListView(padding: const EdgeInsets.all(20), children: [
+          Text(icon, style: const TextStyle(fontSize: 48)),
+          const SizedBox(height: 12),
+          if (arabic.isNotEmpty) ...[
+            Text(arabic,
+                textAlign: TextAlign.right,
+                textDirection: TextDirection.rtl,
+                style: const TextStyle(fontSize: 24, height: 2)),
+            const SizedBox(height: 12),
+          ],
+          Text(text, style: const TextStyle(fontSize: 18, height: 1.7)),
+          if (ref.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Align(alignment: Alignment.centerRight, child: Pill(ref, color: accent)),
+          ],
         ]),
+      ),
+    ));
+  }
+
+  // ─────────────────────────────── সব বিভাগ
+  Widget _sectionsTab() {
+    final items = <(String, String, Color, VoidCallback)>[
+      ('🕌', 'নামাজের সময়', _cPrayer, () => _push(_prayerPage)),
+      ('📰', 'শীর্ষ খবর', _cNews, () => _push(_newsPage)),
+      ('🧠', 'আজকের কুইজ', _cQuiz, () => _push(() => _page(title: 'আজকের কুইজ', [_quizCard()]))),
+      ('📖', 'কুরআন, হাদিস ও পাঠ', _cQuran, () => _push(_readPage)),
+      ('🗓️', 'ক্যালেন্ডার ও দিবস', _cDibos, () => setState(() => _tab = 3)),
+      ('🤲', 'আজকের আমল', _cAmol, () => _push(() => _page(title: 'আজকের আমল', [
+            AsyncSection<Map<String, dynamic>>(
+              future: _amol,
+              builder: (a) => SectionCard(
+                icon: '🤲',
+                title: a['title'] as String,
+                subtitle: a['note'] as String,
+                accent: _cAmol,
+                child: Column(children: (a['items'] as List).map((e) => _amolTile(e as Map<String, dynamic>)).toList()),
+              ),
+            ),
+          ]))),
+      ('🔖', 'বুকমার্ক', const Color(0xFF1C4FB8), () => setState(() => _tab = 2)),
+      ('⚙️', 'সেটিংস', const Color(0xFF495057), () => setState(() => _tab = 4)),
+    ];
+    return _simpleTab(
+      'সব বিভাগ',
+      GridView.count(
+        padding: const EdgeInsets.all(16),
+        crossAxisCount: MediaQuery.of(context).size.width >= 700 ? 4 : 2,
+        mainAxisSpacing: 12,
+        crossAxisSpacing: 12,
+        childAspectRatio: 1.25,
+        children: items
+            .map((e) => _tile(
+                  colors: [e.$3.withValues(alpha: .16), e.$3.withValues(alpha: .06)],
+                  border: e.$3.withValues(alpha: .3),
+                  onTap: e.$4,
+                  child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Text(e.$1, style: const TextStyle(fontSize: 38)),
+                    const SizedBox(height: 8),
+                    Text(e.$2,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            fontFamily: AppConfig.handFont, fontSize: 18, fontWeight: FontWeight.w700, color: e.$3)),
+                  ]),
+                ))
+            .toList(),
       ),
     );
   }
 
-  Widget _glass(Widget child) => Container(
-        margin: const EdgeInsets.only(right: 12),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: .16),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: Colors.white.withValues(alpha: .22)),
-        ),
-        child: child,
-      );
-
-  Widget _dateRow(String icon, String text) => Row(children: [
-        Text(icon),
-        const SizedBox(width: 10),
-        Expanded(child: Text(text, style: const TextStyle(color: Colors.white))),
-      ]);
-
-  // ─────────────────────────────── ট্যাব ১: আজ
-  Widget _todayPage() {
-    final cs = Theme.of(context).colorScheme;
-    return _page(header: _hero(), [
-      // আজ কী দিবস
-      SectionCard(
-        icon: '🗓️',
-        title: 'আজ কী দিবস',
-        accent: _cDibos,
-        child: AsyncSection<({List<String> today, String? nextName, DateTime? nextDate})>(
-          future: _days,
-          builder: (d) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            if (d.today.isEmpty)
-              Text('আজ উল্লেখযোগ্য কোনো দিবস নেই।', style: TextStyle(color: cs.onSurfaceVariant))
-            else
-              ...d.today.map((t) => Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      const Text('✦ ', style: TextStyle(color: _cDibos, fontSize: 16)),
-                      Expanded(
-                        child: Text(t,
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                      ),
-                    ]),
-                  )),
-            if (d.nextName != null) ...[
-              const SizedBox(height: 6),
-              Pill('সামনে: ${d.nextName} • ${Bangla.digits(d.nextDate!.day)} ${Bangla.englishMonths[d.nextDate!.month - 1]}',
-                  color: _cDibos),
-            ],
-          ]),
-        ),
-      ),
-
-      // আবহাওয়া
-      SectionCard(
-        icon: '🌤️',
-        title: 'আজকের আবহাওয়া',
-        accent: _cWeather,
-        child: AsyncSection<Map<String, dynamic>>(
-          future: _weather,
-          builder: (w) {
-            final (emoji, desc) = WeatherService.describe(w['code'] as int);
-            return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [
-                Text(emoji, style: const TextStyle(fontSize: 46)),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('${Bangla.digits(w['temp'])}°সে',
-                        style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w800)),
-                    Text('$desc • 📍 ${w['city']}'),
-                  ]),
+  // ─────────────────────────────── বুকমার্ক
+  Widget _bookmarksTab() => _simpleTab(
+        'বুকমার্ক',
+        ValueListenableBuilder<List<Bookmark>>(
+          valueListenable: Bookmarks.items,
+          builder: (c, list, _) {
+            if (list.isEmpty) {
+              return const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(32),
+                  child: Text('এখনো কিছু সংরক্ষণ করা হয়নি।\nহাদিস, আয়াত, গল্প বা নীতিবাক্য খুলে 🔖 চাপ দিন।',
+                      textAlign: TextAlign.center, style: TextStyle(fontSize: 16, height: 1.6)),
                 ),
-              ]),
-              const SizedBox(height: 10),
-              Wrap(spacing: 8, runSpacing: 6, children: [
-                Pill('⬆️ ${Bangla.digits(w['max'])}° ⬇️ ${Bangla.digits(w['min'])}°', color: _cWeather),
-                Pill('💧 ${Bangla.digits(w['humidity'])}%', color: _cWeather),
-                Pill('🌧️ ${Bangla.digits(w['rain'])}%', color: _cWeather),
-                Pill('💨 ${Bangla.digits(w['wind'])} কিমি/ঘ', color: _cWeather),
-              ]),
-              const SizedBox(height: 10),
-              Text(WeatherService.tip(w), style: TextStyle(color: cs.onSurfaceVariant)),
-            ]);
+              );
+            }
+            return ListView.separated(
+              padding: const EdgeInsets.all(12),
+              itemCount: list.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (c, i) {
+                final b = list[i];
+                return Card(
+                  elevation: 0,
+                  color: Theme.of(context).colorScheme.surfaceContainerLow,
+                  child: ListTile(
+                    title: Text(b.title, style: const TextStyle(fontWeight: FontWeight.w700)),
+                    subtitle: Text('${b.text}${b.ref.isNotEmpty ? '\n— ${b.ref}' : ''}',
+                        maxLines: 4, overflow: TextOverflow.ellipsis),
+                    leading: Pill(b.type),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: () => Bookmarks.toggle(b),
+                    ),
+                    onTap: () => _openDetail('🔖', b.title, b.text, b.ref, b.type, const Color(0xFF1C4FB8)),
+                  ),
+                );
+              },
+            );
           },
         ),
-      ),
+      );
 
-      // স্বাস্থ্য টিপস
-      SectionCard(
-        icon: '🩺',
-        title: 'আজকের স্বাস্থ্য টিপস',
-        accent: _cHealth,
-        child: AsyncSection<Map<String, dynamic>>(
-          future: _health,
-          builder: (h) => Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(h['icon'], style: const TextStyle(fontSize: 34)),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(h['title'],
-                    style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 4),
-                Text(h['text'], style: const TextStyle(fontSize: 15.5, height: 1.6)),
-              ]),
-            ),
-          ]),
-        ),
-      ),
-
-      // সময় অনুযায়ী আমল
-      AsyncSection<Map<String, dynamic>>(
-        future: _amol,
-        builder: (a) => SectionCard(
-          icon: '🤲',
-          title: a['title'] as String,
-          subtitle: a['note'] as String,
-          accent: _cAmol,
-          child: Column(
-            children: (a['items'] as List).map((e) => _amolTile(e as Map<String, dynamic>)).toList(),
+  // ─────────────────────────────── আরও / সেটিংস
+  Widget _moreTab() => _simpleTab(
+        'আরও',
+        ListView(padding: const EdgeInsets.symmetric(vertical: 8), children: [
+          ListTile(
+            leading: const Icon(Icons.person_outline),
+            title: const Text('আপনার নাম'),
+            subtitle: Text(_name.isEmpty ? 'যোগ করা হয়নি' : _name),
+            onTap: _editName,
           ),
-        ),
-      ),
+          ListTile(
+            leading: const Icon(Icons.notifications_outlined),
+            title: const Text('প্রতিদিনের নোটিফিকেশন'),
+            subtitle: const Text('সময় বদলান বা বন্ধ করুন'),
+            onTap: _openNotificationSettings,
+          ),
+          ListTile(
+            leading: const Icon(Icons.nightlight_round),
+            title: const Text('হিজরি তারিখ ঠিক করুন'),
+            subtitle: Text(Bangla.hijriDate(DateTime.now(), _hijriOffset)),
+            onTap: _editHijri,
+          ),
+          ListTile(
+            leading: const Icon(Icons.refresh),
+            title: const Text('সব তথ্য রিফ্রেশ করুন'),
+            onTap: () => _load(force: true),
+          ),
+          ListTile(
+            leading: const Icon(Icons.info_outline),
+            title: const Text('অ্যাপ সম্পর্কে'),
+            onTap: _showAbout,
+          ),
+          const SizedBox(height: 12),
+          _developerCard(),
+        ]),
+      );
 
-      // কৌতুক
-      SectionCard(
-        icon: '😄',
-        title: 'আজকের কৌতুক',
-        accent: _cJoke,
-        child: AsyncSection<String>(
-          future: _joke,
-          builder: (j) => Text(j, style: const TextStyle(fontSize: 16, height: 1.6)),
+  Future<void> _editName() async {
+    final ctrl = TextEditingController(text: _name);
+    final v = await showDialog<String>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('আপনার নাম'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'যেমন: Md. Nazmul Islam'),
         ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text('বাতিল')),
+          FilledButton(onPressed: () => Navigator.pop(c, ctrl.text.trim()), child: const Text('সেভ')),
+        ],
       ),
-      _developerCard(),
-    ]);
+    );
+    if (v != null) {
+      await Cache.setString('user_name', v);
+      setState(() => _name = v);
+    }
   }
 
   Widget _amolTile(Map<String, dynamic> e) {
@@ -983,5 +1926,97 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ]),
       ),
     );
+  }
+}
+
+/// লাইভ ঘড়ি (প্রতি সেকেন্ডে)
+class _LiveClock extends StatefulWidget {
+  final String city;
+  const _LiveClock({this.city = ''});
+  @override
+  State<_LiveClock> createState() => _LiveClockState();
+}
+
+class _LiveClockState extends State<_LiveClock> {
+  Timer? _t;
+  @override
+  void initState() {
+    super.initState();
+    _t = Timer.periodic(const Duration(seconds: 1), (_) => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _t?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final n = DateTime.now();
+    final h12 = n.hour % 12 == 0 ? 12 : n.hour % 12;
+    final t = '${Bangla.digits(h12)}:${Bangla.digits(n.minute.toString().padLeft(2, '0'))}:${Bangla.digits(n.second.toString().padLeft(2, '0'))} ${n.hour < 12 ? 'AM' : 'PM'}';
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      const Icon(Icons.schedule, color: Color(0xFF1E3A8A), size: 22),
+      const SizedBox(height: 4),
+      FittedBox(
+        child: Text(t,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF1A1B1E))),
+      ),
+      Text(widget.city.isEmpty ? '(বর্তমান সময়)' : '📍 ${widget.city}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 12, color: Color(0xFF495057))),
+    ]);
+  }
+}
+
+/// নামাজের লাইভ কাউন্টডাউন (ঘণ্টা:মিনিট:সেকেন্ড)
+class _Countdown extends StatefulWidget {
+  final DateTime target;
+  final VoidCallback onDone;
+  const _Countdown({required this.target, required this.onDone});
+  @override
+  State<_Countdown> createState() => _CountdownState();
+}
+
+class _CountdownState extends State<_Countdown> {
+  Timer? _t;
+  bool _fired = false;
+  @override
+  void initState() {
+    super.initState();
+    _t = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() {});
+      if (!_fired && !widget.target.isAfter(DateTime.now())) {
+        _fired = true;
+        widget.onDone();
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _Countdown old) {
+    super.didUpdateWidget(old);
+    if (old.target != widget.target) _fired = false;
+  }
+
+  @override
+  void dispose() {
+    _t?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    var d = widget.target.difference(DateTime.now());
+    if (d.isNegative) d = Duration.zero;
+    String two(int v) => v.toString().padLeft(2, '0');
+    return Text('${two(d.inHours)}:${two(d.inMinutes % 60)}:${two(d.inSeconds % 60)}',
+        style: const TextStyle(
+            color: Colors.white,
+            fontSize: 24,
+            fontWeight: FontWeight.w800));
   }
 }

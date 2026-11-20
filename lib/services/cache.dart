@@ -35,6 +35,12 @@ class Cache {
 
   static Future<void> setInt(String key, int v) async =>
       (await SharedPreferences.getInstance()).setInt(key, v);
+
+  static Future<String> getString(String key, String def) async =>
+      (await SharedPreferences.getInstance()).getString(key) ?? def;
+
+  static Future<void> setString(String key, String v) async =>
+      (await SharedPreferences.getInstance()).setString(key, v);
 }
 
 /// কেশ থেকে নেয়, না থাকলে ইন্টারনেট থেকে আনে, ব্যর্থ হলে শেষ ডেটা দেখায়।

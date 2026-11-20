@@ -1,5 +1,5 @@
 name: smart_daily_need
-description: "Smart Daily Need — developed by Md. Nazmul Islam (nislam.info.bd)"
+description: "আজকের দিন (Ajker Din – Today+) — developed by Md. Nazmul Islam (nislam.info.bd)"
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -30,6 +30,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/data/
+    - assets/icon/icon.png
   fonts:
     - family: SolaimanLipi
       fonts:

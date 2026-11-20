@@ -102,4 +102,42 @@ class Bangla {
   /// বছরের দিনের সংখ্যা — প্রতিদিন আলাদা কনটেন্ট বাছাই করতে।
   static int dayIndex(DateTime d) =>
       DateTime.utc(d.year, d.month, d.day).difference(DateTime.utc(2024, 1, 1)).inDays;
+
+  static const _seasonEn = {
+    'গ্রীষ্মকাল': 'Summer', 'বর্ষাকাল': 'Monsoon', 'শরৎকাল': 'Autumn',
+    'হেমন্তকাল': 'Late Autumn', 'শীতকাল': 'Winter', 'বসন্তকাল': 'Spring',
+  };
+
+  /// ঋতু: (বাংলা, ইংরেজি)
+  static ({String bn, String en}) season(DateTime d) {
+    final s = banglaDate(d);
+    final bn = s.substring(s.indexOf('(') + 1, s.indexOf(')'));
+    return (bn: bn, en: _seasonEn[bn] ?? '');
+  }
+
+  static const _arDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+  static String arabicDigits(int n) =>
+      n.toString().split('').map((c) => _arDigits[int.parse(c)]).join();
+
+  static const _hijriMonthsAr = [
+    'محرم', 'صفر', 'ربيع الأول', 'ربيع الآخر', 'جمادى الأولى', 'جمادى الآخرة',
+    'رجب', 'شعبان', 'رمضان', 'شوال', 'ذو القعدة', 'ذو الحجة'
+  ];
+
+  /// "٠٢ جمادى الأولى"
+  static String hijriArabic(DateTime d, int offsetDays) {
+    final h = hijri(d, offsetDays);
+    return '${arabicDigits(h.day).padLeft(2, '٠')} ${_hijriMonthsAr[h.month - 1]}';
+  }
+
+  static const englishMonthsShort = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+  ];
+  static const weekdaysEn = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+  /// শুধু দিন ও মাস: "৭ অগ্রহায়ণ"
+  static String banglaDayMonth(DateTime d) {
+    final s = banglaDate(d);
+    return s.substring(0, s.indexOf(','));
+  }
 }

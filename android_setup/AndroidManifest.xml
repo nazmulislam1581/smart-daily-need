@@ -7,7 +7,7 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
 
     <application
-        android:label="Smart Daily Need"
+        android:label="আজকের দিন"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 

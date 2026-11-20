@@ -1,4 +1,4 @@
-import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -23,7 +23,9 @@ class NotificationService {
   static const _kMinute = 'notif_minute';
 
   /// Windows/ডেস্কটপে প্রতিদিনের নোটিফিকেশন সাজানো সমর্থিত নয়
-  static bool get supported => Platform.isAndroid || Platform.isIOS;
+  static bool get supported =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS);
 
   static Future<void> init() async {
     if (_ready || !supported) return;

@@ -1,6 +1,7 @@
 /// অ্যাপের সাধারণ সেটিংস। দরকার হলে এখান থেকে বদলান।
 class AppConfig {
-  static const appName = 'Smart Daily Need';
+  static const appName = 'আজকের দিন';
+  static const appNameEn = 'Ajker Din – Today+';
 
   /// শিরোনাম ও নীতিবাক্যের জন্য হাতের লেখার মতো বাংলা ফন্ট
   static const handFont = 'BenSenHandwriting';
