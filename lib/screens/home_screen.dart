@@ -747,7 +747,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             if (!compact)
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: SizedBox(height: 90, width: double.infinity, child: CustomPaint(painter: BannerPainter())),
+                child: SizedBox(height: 90, width: double.infinity, child: CustomPaint(painter: DayBannerPainter())),
               ),
             if (!compact) const SizedBox(height: 8),
             Text(headline,
@@ -787,7 +787,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         body: ListView(padding: const EdgeInsets.all(16), children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(16),
-            child: SizedBox(height: 160, child: CustomPaint(painter: BannerPainter())),
+            child: SizedBox(height: 160, child: CustomPaint(painter: DayBannerPainter())),
           ),
           const SizedBox(height: 14),
           FutureBuilder<({List<String> today, String? nextName, DateTime? nextDate})>(

@@ -87,7 +87,7 @@ class SkyPainter extends CustomPainter {
 }
 
 /// "আজকের বিশেষ" ব্যানার: সবুজ মাঠ, লাল সূর্য, উড়ন্ত পাখি
-class BannerPainter extends CustomPainter {
+class DayBannerPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final w = size.width, h = size.height;
